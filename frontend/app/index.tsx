@@ -76,7 +76,7 @@ function calcProtein(weightLbs: number, goal: Goal, age: number) {
 
 const GOAL_OPTIONS: { id: Goal; label: string; emoji: string; desc: string }[] = [
   { id: "maintain", label: "Stay healthy", emoji: "🌿", desc: "Maintain muscle & wellness" },
-  { id: "lose", label: "Lose weight", emoji: "✨", desc: "Preserve lean mass while cutting" },
+  { id: "lose", label: "Lose weight", emoji: "✨", desc: "Preserve lean muscle mass" },
   { id: "build", label: "Build muscle", emoji: "💪", desc: "Support strength & hypertrophy" },
   { id: "active", label: "Athletic", emoji: "🏃", desc: "High-performance fuelling" },
 ];
@@ -122,6 +122,8 @@ const ensureUserId = async (): Promise<string> => {
 };
 
 // ---------- Types ----------
+type SourceType = "animal" | "plant" | "supplement";
+
 type MealEntry = {
   id?: string;
   name: string;
@@ -131,7 +133,27 @@ type MealEntry = {
   imageUrl?: string;
   time: string;
   date?: string;
+  source?: SourceType;
 };
+
+const PLANT_KEYWORDS = [
+  "tofu", "lentil", "bean", "edamame", "chickpea", "quinoa", "tempeh", "seitan",
+  "almond", "peanut", "cashew", "walnut", "pistachio", "hummus", "soy", "oat",
+  "vegetable", "broccoli", "spinach", "kale", "salad", "veggie", "pea ", "peas",
+  "rice", "bread", "pasta", "noodle",
+];
+const SUPPLEMENT_KEYWORDS = [
+  "shake", "powder", "whey", "casein", "isolate", "bar", "protein bar", "smoothie",
+  "supplement", "scoop",
+];
+
+function inferSource(name?: string, explicit?: SourceType): SourceType {
+  if (explicit === "animal" || explicit === "plant" || explicit === "supplement") return explicit;
+  const n = (name || "").toLowerCase();
+  for (const kw of SUPPLEMENT_KEYWORDS) if (n.includes(kw)) return "supplement";
+  for (const kw of PLANT_KEYWORDS) if (n.includes(kw)) return "plant";
+  return "animal";
+}
 
 // ---------- Small components ----------
 function Card({ children, style }: any) {
@@ -271,6 +293,72 @@ export default function Nuura() {
   const [weekTotals, setWeekTotals] = useState<Record<string, number>>({});
   const [monthTotals, setMonthTotals] = useState<Record<string, number>>({});
 
+  // Edit/delete state
+  const [editing, setEditing] = useState<MealEntry | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editProtein, setEditProtein] = useState("");
+  const [editSource, setEditSource] = useState<SourceType>("animal");
+
+  const openEdit = (m: MealEntry) => {
+    setEditing(m);
+    setEditName(m.name);
+    setEditProtein(String(m.protein));
+    setEditSource(inferSource(m.name, m.source));
+  };
+
+  const closeEdit = () => {
+    setEditing(null);
+    setEditName("");
+    setEditProtein("");
+  };
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    const protein = Math.max(0, Math.min(parseInt(editProtein) || 0, 300));
+    const name = editName.trim() || editing.name;
+    const updated = entries.map((e) =>
+      e === editing ? { ...e, name, protein, source: editSource } : e
+    );
+    setEntries(updated);
+    await AsyncStorage.setItem(`nuura_meals_${todayStr()}`, JSON.stringify(updated));
+    if (editing.id) {
+      try {
+        await fetch(`${API}/meals/${editing.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: userId, name, protein, source: editSource }),
+        });
+      } catch {}
+    }
+    await loadWeekTotals(userId);
+    await loadMonthTotals(userId);
+    showToast("Meal updated ✦");
+    closeEdit();
+  };
+
+  const deleteMeal = (m: MealEntry) => {
+    Alert.alert("Delete this meal?", `${m.name} — ${m.protein}g`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          const updated = entries.filter((e) => e !== m);
+          setEntries(updated);
+          await AsyncStorage.setItem(`nuura_meals_${todayStr()}`, JSON.stringify(updated));
+          if (m.id) {
+            try {
+              await fetch(`${API}/meals/${m.id}?user_id=${userId}`, { method: "DELETE" });
+            } catch {}
+          }
+          await loadWeekTotals(userId);
+          await loadMonthTotals(userId);
+          showToast("Meal removed");
+        },
+      },
+    ]);
+  };
+
   // ----- Bootstrap -----
   useEffect(() => {
     (async () => {
@@ -393,6 +481,7 @@ export default function Nuura() {
         throw new Error(txt || "API error");
       }
       const food = await res.json();
+      const source: SourceType = inferSource(food.name, food.source);
       const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       const date = todayStr();
       const localEntry: MealEntry = {
@@ -403,6 +492,7 @@ export default function Nuura() {
         imageUrl: uri,
         time,
         date,
+        source,
       };
 
       // persist to backend
@@ -419,6 +509,7 @@ export default function Nuura() {
             imageUrl: "",
             time,
             date,
+            source,
           }),
         });
         if (save.ok) {
@@ -493,10 +584,12 @@ export default function Nuura() {
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
       {/* HEADER */}
       <View style={styles.header}>
-        <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
-          <Text style={styles.brand}>{APP_NAME}</Text>
-          <Text style={{ color: C.accent, fontFamily: "CormorantGaramond_700Bold", fontSize: 28 }}>.</Text>
-          <Text style={styles.tagline}>{APP_TAGLINE}</Text>
+        <View style={{ flexDirection: "row", alignItems: "baseline" }}>
+          <Text style={styles.brand}>
+            {APP_NAME}
+            <Text style={{ color: C.accent }}>.</Text>
+          </Text>
+          <Text style={[styles.tagline, { marginLeft: 8 }]}>{APP_TAGLINE}</Text>
         </View>
         <View style={styles.goalPill} testID="header-daily-goal">
           <Text style={{ color: C.muted, fontFamily: "Jost_500Medium", fontSize: 10, letterSpacing: 1 }}>
@@ -507,42 +600,6 @@ export default function Nuura() {
           </Text>
         </View>
       </View>
-
-      {/* TAB BAR (top, scrollable) */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 20, gap: 8, paddingBottom: 8 }}
-      >
-        {TABS.map((t) => {
-          const active = tab === t;
-          const label = t === "calculator" ? "my goal" : t;
-          return (
-            <TouchableOpacity
-              key={t}
-              testID={`tab-${t}`}
-              onPress={() => setTab(t)}
-              activeOpacity={0.85}
-              style={[
-                styles.topTab,
-                { borderColor: active ? C.primary : C.border, backgroundColor: active ? `${C.primary}15` : C.surface },
-              ]}
-            >
-              <Text
-                style={{
-                  color: active ? C.primary : C.muted,
-                  fontFamily: "Jost_600SemiBold",
-                  fontSize: 13,
-                  letterSpacing: 0.6,
-                  textTransform: "lowercase",
-                }}
-              >
-                {label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
 
       <ScrollView
         style={{ flex: 1 }}
@@ -642,9 +699,11 @@ export default function Nuura() {
                   </Text>
                 )}
                 {entries.map((e, i) => (
-                  <View
+                  <TouchableOpacity
                     key={(e.id || "") + i}
                     testID={`meal-row-${i}`}
+                    onLongPress={() => deleteMeal(e)}
+                    activeOpacity={0.85}
                     style={{
                       flexDirection: "row",
                       alignItems: "center",
@@ -698,7 +757,25 @@ export default function Nuura() {
                         {e.time}
                       </Text>
                     </View>
-                  </View>
+                    <View style={{ flexDirection: "row", marginLeft: 4, gap: 4 }}>
+                      <TouchableOpacity
+                        testID={`meal-edit-${i}`}
+                        onPress={() => openEdit(e)}
+                        hitSlop={8}
+                        style={styles.iconBtn}
+                      >
+                        <Text style={{ fontSize: 14, color: C.primary }}>✎</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        testID={`meal-delete-${i}`}
+                        onPress={() => deleteMeal(e)}
+                        hitSlop={8}
+                        style={styles.iconBtn}
+                      >
+                        <Text style={{ fontSize: 14, color: C.muted }}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </TouchableOpacity>
                 ))}
               </View>
             </Card>
@@ -724,49 +801,7 @@ export default function Nuura() {
 
         {/* ───── SOURCES ───── */}
         {tab === "sources" && (
-          <Card>
-            <Text style={styles.cardTitle}>Top protein sources</Text>
-            <View style={{ marginTop: 14, gap: 10 }}>
-              {FOOD_SOURCES.map((f, i) => (
-                <View
-                  key={i}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 12,
-                    backgroundColor: C.sub,
-                    padding: 14,
-                    borderRadius: 16,
-                  }}
-                >
-                  <Text style={{ fontSize: 26 }}>{f.emoji}</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontFamily: "Jost_600SemiBold", color: C.text, fontSize: 15 }}>
-                      {f.name}
-                    </Text>
-                    <Text style={{ fontFamily: "Jost_400Regular", color: C.muted, fontSize: 12 }}>
-                      {f.per}
-                    </Text>
-                  </View>
-                  <Text style={{ fontFamily: "CormorantGaramond_700Bold", color: C.primary, fontSize: 22 }}>
-                    {f.g}g
-                  </Text>
-                </View>
-              ))}
-            </View>
-            <Text
-              style={{
-                marginTop: 16,
-                fontFamily: "CormorantGaramond_400Regular_Italic",
-                fontSize: 14,
-                color: C.muted,
-                lineHeight: 20,
-              }}
-            >
-              💡 Mix animal & plant proteins for a complete amino acid profile. Pair lentils with rice, or tofu
-              with edamame for max bioavailability.
-            </Text>
-          </Card>
+          <SourcesView entries={entries} total={total} />
         )}
 
         {/* ───── WEEK ───── */}
@@ -819,6 +854,123 @@ export default function Nuura() {
         </View>
       ) : null}
 
+      {/* EDIT MEAL MODAL */}
+      <Modal visible={!!editing} animationType="slide" transparent>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(42,31,46,0.45)",
+            justifyContent: "flex-end",
+          }}
+        >
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
+            <View
+              style={{
+                backgroundColor: C.bg,
+                borderTopLeftRadius: 28,
+                borderTopRightRadius: 28,
+                padding: 20,
+                paddingBottom: 32,
+                gap: 14,
+              }}
+            >
+              <View style={{ alignItems: "center", marginBottom: 4 }}>
+                <View
+                  style={{ width: 44, height: 4, borderRadius: 2, backgroundColor: C.border }}
+                />
+              </View>
+              <Text style={{ fontFamily: "CormorantGaramond_700Bold", fontSize: 24, color: C.text }}>
+                Edit meal
+              </Text>
+              <Text style={styles.label}>Name</Text>
+              <TextInput
+                testID="edit-name-input"
+                value={editName}
+                onChangeText={setEditName}
+                style={styles.input}
+              />
+              <Text style={styles.label}>Protein (g)</Text>
+              <TextInput
+                testID="edit-protein-input"
+                value={editProtein}
+                onChangeText={setEditProtein}
+                keyboardType="numeric"
+                style={styles.input}
+              />
+              <Text style={styles.label}>Source</Text>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                {(["animal", "plant", "supplement"] as SourceType[]).map((s) => {
+                  const active = editSource === s;
+                  return (
+                    <TouchableOpacity
+                      key={s}
+                      testID={`edit-source-${s}`}
+                      onPress={() => setEditSource(s)}
+                      activeOpacity={0.85}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 12,
+                        borderRadius: 14,
+                        borderWidth: 1.5,
+                        borderColor: active ? C.primary : C.border,
+                        backgroundColor: active ? `${C.primary}15` : C.surface,
+                        alignItems: "center",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: active ? C.primary : C.muted,
+                          fontFamily: "Jost_600SemiBold",
+                          fontSize: 13,
+                          textTransform: "capitalize",
+                        }}
+                      >
+                        {s}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+                <TouchableOpacity
+                  testID="edit-cancel-btn"
+                  onPress={closeEdit}
+                  activeOpacity={0.85}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 16,
+                    borderRadius: 18,
+                    borderWidth: 1.5,
+                    borderColor: C.border,
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={{ color: C.muted, fontFamily: "Jost_600SemiBold", fontSize: 14 }}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  testID="edit-save-btn"
+                  onPress={saveEdit}
+                  activeOpacity={0.85}
+                  style={{
+                    flex: 1.6,
+                    backgroundColor: C.primary,
+                    paddingVertical: 16,
+                    borderRadius: 18,
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={{ color: "#fff", fontFamily: "Jost_600SemiBold", fontSize: 14 }}>
+                    Save changes
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
       {/* ONBOARDING MODAL */}
       <Modal visible={showOnboarding} animationType="slide" transparent={false}>
         <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
@@ -826,12 +978,12 @@ export default function Nuura() {
             behavior={Platform.OS === "ios" ? "padding" : "height"}
             style={{ flex: 1 }}
           >
-            <ScrollView contentContainerStyle={{ padding: 24, gap: 18 }}>
-              <View style={{ alignItems: "center", marginTop: 12, gap: 6 }}>
+            <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 24, gap: 12 }}>
+              <View style={{ alignItems: "center", gap: 2 }}>
                 <Text
                   style={{
                     fontFamily: "CormorantGaramond_700Bold",
-                    fontSize: 48,
+                    fontSize: 36,
                     color: C.text,
                   }}
                 >
@@ -841,11 +993,11 @@ export default function Nuura() {
                 <Text
                   style={{
                     fontFamily: "CormorantGaramond_400Regular_Italic",
-                    fontSize: 18,
+                    fontSize: 15,
                     color: C.muted,
                   }}
                 >
-                  let's personalise your protein
+                  let's personalize your protein
                 </Text>
               </View>
               <CalculatorView
@@ -885,7 +1037,7 @@ function CalculatorView({
 }: any) {
   return (
     <Card>
-      <Text style={styles.cardTitle}>Personalise your protein goal</Text>
+      <Text style={styles.cardTitle}>Personalize your protein goal</Text>
 
       <Text style={styles.label}>Your weight</Text>
       <View style={{ flexDirection: "row", gap: 10, marginTop: 6 }}>
@@ -1053,6 +1205,156 @@ function CalculatorView({
         sarcopenia. Athletes up to 1.8g/kg.
       </Text>
     </Card>
+  );
+}
+
+// ---------- Sources subview ----------
+function SourcesView({ entries, total }: { entries: MealEntry[]; total: number }) {
+  const breakdown = useMemo(() => {
+    const acc: Record<SourceType, number> = { animal: 0, plant: 0, supplement: 0 };
+    entries.forEach((e) => {
+      const src = inferSource(e.name, e.source);
+      acc[src] += e.protein || 0;
+    });
+    return acc;
+  }, [entries]);
+
+  const t = Math.max(total, 1);
+  const sourceDefs: { key: SourceType; label: string; emoji: string; color: string }[] = [
+    { key: "animal", label: "Animal", emoji: "🍗", color: C.primary },
+    { key: "plant", label: "Plant", emoji: "🌱", color: C.green },
+    { key: "supplement", label: "Supplements", emoji: "🥤", color: C.accent },
+  ];
+
+  return (
+    <>
+      <Card>
+        <Text style={styles.cardTitle}>Today's protein mix</Text>
+        <Text
+          style={{
+            fontFamily: "CormorantGaramond_400Regular_Italic",
+            color: C.muted,
+            fontSize: 14,
+            marginTop: 4,
+          }}
+        >
+          {total > 0 ? "Where today's protein came from." : "Log a meal to see your mix."}
+        </Text>
+
+        {/* segmented bar */}
+        <View
+          style={{
+            height: 14,
+            borderRadius: 8,
+            overflow: "hidden",
+            flexDirection: "row",
+            marginTop: 16,
+            backgroundColor: C.sub,
+          }}
+        >
+          {sourceDefs.map((s) => {
+            const w = total > 0 ? (breakdown[s.key] / t) * 100 : 0;
+            if (w <= 0) return null;
+            return <View key={s.key} style={{ width: `${w}%`, backgroundColor: s.color }} />;
+          })}
+        </View>
+
+        <View style={{ marginTop: 14, gap: 10 }}>
+          {sourceDefs.map((s) => {
+            const grams = breakdown[s.key];
+            const pct = total > 0 ? Math.round((grams / t) * 100) : 0;
+            return (
+              <View
+                key={s.key}
+                testID={`source-row-${s.key}`}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 12,
+                  backgroundColor: C.sub,
+                  padding: 14,
+                  borderRadius: 16,
+                }}
+              >
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 12,
+                    backgroundColor: `${s.color}25`,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text style={{ fontSize: 20 }}>{s.emoji}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: "Jost_600SemiBold", color: C.text, fontSize: 15 }}>
+                    {s.label}
+                  </Text>
+                  <Text style={{ fontFamily: "Jost_400Regular", color: C.muted, fontSize: 12 }}>
+                    {grams}g logged today
+                  </Text>
+                </View>
+                <Text
+                  style={{
+                    fontFamily: "CormorantGaramond_700Bold",
+                    color: s.color,
+                    fontSize: 24,
+                  }}
+                >
+                  {pct}%
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      </Card>
+
+      <Card>
+        <Text style={styles.cardTitle}>Top protein sources</Text>
+        <View style={{ marginTop: 14, gap: 10 }}>
+          {FOOD_SOURCES.map((f, i) => (
+            <View
+              key={i}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+                backgroundColor: C.sub,
+                padding: 14,
+                borderRadius: 16,
+              }}
+            >
+              <Text style={{ fontSize: 26 }}>{f.emoji}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: "Jost_600SemiBold", color: C.text, fontSize: 15 }}>
+                  {f.name}
+                </Text>
+                <Text style={{ fontFamily: "Jost_400Regular", color: C.muted, fontSize: 12 }}>
+                  {f.per}
+                </Text>
+              </View>
+              <Text style={{ fontFamily: "CormorantGaramond_700Bold", color: C.primary, fontSize: 22 }}>
+                {f.g}g
+              </Text>
+            </View>
+          ))}
+        </View>
+        <Text
+          style={{
+            marginTop: 16,
+            fontFamily: "CormorantGaramond_400Regular_Italic",
+            fontSize: 14,
+            color: C.muted,
+            lineHeight: 20,
+          }}
+        >
+          💡 Mix animal & plant proteins for a complete amino acid profile. Pair lentils with rice, or tofu
+          with edamame for max bioavailability.
+        </Text>
+      </Card>
+    </>
   );
 }
 
@@ -1376,5 +1678,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 16,
     ...SHADOW,
+  },
+  iconBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: C.sub,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

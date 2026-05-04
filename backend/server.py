@@ -74,6 +74,7 @@ class Meal(BaseModel):
     imageUrl: Optional[str] = ""
     time: str  # display time e.g. '8:14 AM'
     date: str  # YYYY-MM-DD (local user date)
+    source: str = "animal"  # animal | plant | supplement
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -86,6 +87,14 @@ class MealCreate(BaseModel):
     imageUrl: Optional[str] = ""
     time: str
     date: str
+    source: str = "animal"
+
+
+class MealPatch(BaseModel):
+    user_id: str
+    name: Optional[str] = None
+    protein: Optional[int] = None
+    source: Optional[str] = None
 
 
 # ---------- Helpers ----------
@@ -143,7 +152,8 @@ async def analyze_food(req: AnalyzeRequest):
         "protein content in grams. Return ONLY a compact JSON object with keys: "
         '"name" (short food name, max 4 words), "protein" (integer grams of protein in '
         'the entire visible portion), "note" (one short, friendly sentence about the '
-        "food's protein quality, max 12 words). No prose, no markdown."
+        'food\'s protein quality, max 12 words), "source" (one of "animal", "plant", '
+        '"supplement" — supplement covers protein powders/bars/shakes). No prose, no markdown.'
     )
 
     chat = LlmChat(
@@ -237,6 +247,28 @@ async def meals_range(user_id: str, start: str, end: str):
 async def delete_meal(meal_id: str, user_id: str):
     res = await db.meals.delete_one({"id": meal_id, "user_id": user_id})
     return {"deleted": res.deleted_count}
+
+
+@api_router.patch("/meals/{meal_id}", response_model=Optional[Meal])
+async def patch_meal(meal_id: str, p: MealPatch):
+    update: dict = {}
+    if p.name is not None:
+        update["name"] = p.name[:80]
+    if p.protein is not None:
+        update["protein"] = max(0, min(int(p.protein), 300))
+    if p.source is not None and p.source in ("animal", "plant", "supplement"):
+        update["source"] = p.source
+    if not update:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    res = await db.meals.find_one_and_update(
+        {"id": meal_id, "user_id": p.user_id},
+        {"$set": update},
+        return_document=True,
+        projection={"_id": 0},
+    )
+    if not res:
+        return None
+    return Meal(**res)
 
 
 # ---------- Wire up ----------

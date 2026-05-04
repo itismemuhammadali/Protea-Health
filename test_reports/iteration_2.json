@@ -1,0 +1,62 @@
+{
+  "summary": "Iteration 2 verified: all spelling/copy/layout changes, PATCH meal endpoint, meal.source field, edit modal flow, Sources tab protein-mix card, persistence. One BACKEND bug found: /api/analyze response is missing the 'source' field. One frontend UX limitation: delete confirmation does not appear on web preview because RN-Web Alert.alert is a no-op. Backend 15/16 pytest pass (1 intentionally-failing assertion exposing the analyze bug). Frontend 11/12 interaction checks pass.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/analyze",
+        "issue": "AnalyzeResponse Pydantic model lacks 'source' field and extraction logic never reads data.get('source'). Gemini is correctly prompted for source, but the backend strips it. Response returns only {name, protein, emoji, note}. Must add `source: str` to AnalyzeResponse, parse/validate against ('animal','plant','supplement'), default to pick_source(name) or 'animal' on miss.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Today's log → delete (✕) button and long-press",
+        "issue": "On the Expo web preview, tapping ✕ does not show a confirmation dialog and the row is not deleted. Root cause: React-Native-Web's Alert.alert is effectively a no-op in browser, so the 'Delete' button callback never executes. Will work on native iOS/Android. Suggest a Platform.OS==='web' fallback using window.confirm() inside deleteMeal for parity on web preview.",
+        "testID": "meal-delete-0",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "onboarding (390x844)",
+        "issues": [
+          "Calculate button is fully visible at y≈597/844 without scroll — top whitespace reduction verified.",
+          "RN-Web console warnings persist: 'shadow*' style props deprecated — cosmetic only."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_nuura_api.py (regression, 10/10 pass)",
+    "/app/backend/tests/test_iter2_new.py (new: 5/6 pass, 1 documented failure on /api/analyze source)",
+    "/app/test_reports/pytest/iter2_results.xml"
+  ],
+  "action_items": [
+    "HIGH — Fix /api/analyze: add `source: str` to AnalyzeResponse; parse data.get('source'); validate in ('animal','plant','supplement'); fallback to inferred default. Frontend already consumes food.source via inferSource(food.name, food.source).",
+    "MEDIUM — Add web fallback for delete confirmation (Platform.OS === 'web' ? window.confirm(...) : Alert.alert(...)) in deleteMeal so ✕ works on the web preview.",
+    "LOW — Address RN-Web 'shadow*' deprecation by migrating to boxShadow (cosmetic).",
+    "LOW — One legacy string 'YOUR PERSONALISED GOAL' remains in CalculatorView result card (index.tsx line 1162); replace with 'YOUR PERSONALIZED GOAL' for US-spelling consistency."
+  ],
+  "critical_code_review_comments": [
+    "server.py patch_meal correctly scopes update to {id, user_id}, clamps protein 0–300, whitelists source values, returns None for non-owner (tested).",
+    "server.py analyze_food prompts Gemini for 'source' but AnalyzeResponse schema drops it — type contract mismatch with frontend expectation.",
+    "index.tsx persists optimistic UI edit/delete to AsyncStorage AND fires PATCH/DELETE to backend — good offline resilience.",
+    "inferSource() provides a keyword-based fallback on the client, so UI works even if backend omits source — but Sources tab still depends on correct source classification.",
+    "Legacy top-tab pills completely removed from render — only bottom-bar TouchableOpacity tabs exist; `styles.topTab` is now dead code (safe to remove).",
+    "index.tsx is 1691 lines — exceeds the 700-line guideline; consider splitting CalculatorView / SourcesView / WeekView / MonthView into /app/frontend/app/components/."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter2_new.py (new)"
+  ],
+  "success_rate": {"backend": "93.75% (15/16)", "frontend": "91.7% (11/12)"},
+  "seed_data_creation": "Created ephemeral TEST_* users in pytest (all deleted in teardown). In the live frontend run, seeded 3 meals (animal/plant/supplement) for the on-device user to validate Sources tab mix — left in DB for today's date only.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "EXPO_PUBLIC_BACKEND_URL=https://gains-log-72.preview.emergentagent.com. Run `pytest /app/backend/tests/ -v`. The only expected failure is TestAnalyzeSource::test_analyze_response_includes_source until the analyze endpoint exposes 'source'. For UI delete flow, register `page.on('dialog', lambda d: d.accept())` BEFORE the first click; however on Expo web this has no effect because RN-Web Alert.alert is a no-op. Sources tab shows percentages that sum to ~100% when ≥1 meal logged (verified Animal 33% + Plant 67% + Supp 0% with seeded data).",
+  "rca_of_issue": "analyze 'source' bug: AnalyzeResponse model omits the field; response_model=AnalyzeResponse strips the extra key returned from parsed JSON. Fix: add `source: str = 'animal'` to AnalyzeResponse and set it in the return, validating the parsed value against the allowed set. Delete-on-web: `Alert.alert` in react-native-web does not render any UI, so the 'Delete' button's onPress is never invoked. Fix: Platform.OS==='web' branch using window.confirm for both long-press and ✕."
+}
