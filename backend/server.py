@@ -43,6 +43,7 @@ class AnalyzeResponse(BaseModel):
     protein: int
     emoji: str
     note: str
+    source: str = "animal"  # animal | plant | supplement
 
 
 class Profile(BaseModel):
@@ -183,6 +184,9 @@ async def analyze_food(req: AnalyzeRequest):
         protein = int(round(float(data.get("protein") or 0)))
         protein = max(0, min(protein, 300))
         note = str(data.get("note") or "").strip()[:140]
+        source = str(data.get("source") or "").strip().lower()
+        if source not in ("animal", "plant", "supplement"):
+            source = "animal"
     except Exception as e:
         logger.exception("Parse error: %s | raw=%s", e, raw)
         raise HTTPException(status_code=502, detail="Could not parse AI response")
@@ -192,6 +196,7 @@ async def analyze_food(req: AnalyzeRequest):
         protein=protein,
         emoji=pick_emoji(name),
         note=note or "Logged from your camera ✦",
+        source=source,
     )
 
 

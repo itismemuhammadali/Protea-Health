@@ -337,25 +337,29 @@ export default function Nuura() {
   };
 
   const deleteMeal = (m: MealEntry) => {
+    const doDelete = async () => {
+      const updated = entries.filter((e) => e !== m);
+      setEntries(updated);
+      await AsyncStorage.setItem(`nuura_meals_${todayStr()}`, JSON.stringify(updated));
+      if (m.id) {
+        try {
+          await fetch(`${API}/meals/${m.id}?user_id=${userId}`, { method: "DELETE" });
+        } catch {}
+      }
+      await loadWeekTotals(userId);
+      await loadMonthTotals(userId);
+      showToast("Meal removed");
+    };
+    if (Platform.OS === "web") {
+      // eslint-disable-next-line no-undef
+      if (typeof window !== "undefined" && window.confirm(`Delete "${m.name}" — ${m.protein}g?`)) {
+        doDelete();
+      }
+      return;
+    }
     Alert.alert("Delete this meal?", `${m.name} — ${m.protein}g`, [
       { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          const updated = entries.filter((e) => e !== m);
-          setEntries(updated);
-          await AsyncStorage.setItem(`nuura_meals_${todayStr()}`, JSON.stringify(updated));
-          if (m.id) {
-            try {
-              await fetch(`${API}/meals/${m.id}?user_id=${userId}`, { method: "DELETE" });
-            } catch {}
-          }
-          await loadWeekTotals(userId);
-          await loadMonthTotals(userId);
-          showToast("Meal removed");
-        },
-      },
+      { text: "Delete", style: "destructive", onPress: doDelete },
     ]);
   };
 
@@ -1159,7 +1163,7 @@ function CalculatorView({
           testID="calc-result"
         >
           <Text style={{ fontFamily: "Jost_500Medium", color: C.muted, fontSize: 11, letterSpacing: 1 }}>
-            YOUR PERSONALISED GOAL
+            YOUR PERSONALIZED GOAL
           </Text>
           <Text
             style={{
