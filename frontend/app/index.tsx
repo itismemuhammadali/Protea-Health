@@ -529,7 +529,7 @@ export default function Nuura() {
       await loadMonthTotals(userId);
       showToast(`+${food.protein}g logged ✦`);
     } catch (e: any) {
-      Alert.alert("Could not analyze", "Please try a clearer photo of your food.");
+      Alert.alert("Couldn't analyze", "Something went wrong. Please try again.");
     } finally {
       setAnalyzing(false);
     }
@@ -591,7 +591,7 @@ export default function Nuura() {
         <View style={{ flexDirection: "row", alignItems: "baseline" }}>
           <Text style={styles.brand}>
             {APP_NAME}
-            <Text style={{ color: C.accent }}>.</Text>
+            <Text style={{ color: C.primary }}>.</Text>
           </Text>
           <Text style={[styles.tagline, { marginLeft: 8 }]}>{APP_TAGLINE}</Text>
         </View>
@@ -992,7 +992,7 @@ export default function Nuura() {
                   }}
                 >
                   {APP_NAME}
-                  <Text style={{ color: C.accent }}>.</Text>
+                  <Text style={{ color: C.primary }}>.</Text>
                 </Text>
                 <Text
                   style={{
@@ -1493,7 +1493,7 @@ function MonthView({
             marginTop: 4,
           }}
         >
-          Each square is a day — fuller colour, fuller protein.
+          Each square is a day — fuller color, fuller protein.
         </Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 16 }}>
           {totals.map((v, i) => {

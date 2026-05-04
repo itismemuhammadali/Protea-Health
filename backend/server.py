@@ -122,17 +122,92 @@ def pick_emoji(name: str) -> str:
 
 
 def extract_json(text: str) -> dict:
-    """Robustly extract JSON object from LLM response."""
+    """Robustly extract a JSON object from an LLM response.
+
+    Handles: fenced code blocks, prose before/after, and object spans that include
+    nested braces by doing a brace-depth scan rather than a regex.
+    """
     text = text.strip()
-    # try fenced code block
-    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    # 1) fenced ```json ... ``` block
+    fence = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text)
     if fence:
-        return json.loads(fence.group(1))
-    # find first { ... } substring
-    m = re.search(r"\{.*\}", text, re.DOTALL)
-    if m:
-        return json.loads(m.group(0))
+        try:
+            return json.loads(fence.group(1))
+        except Exception:
+            pass
+    # 2) brace-depth scan — pick the largest balanced {...}
+    candidates = []
+    depth = 0
+    start = -1
+    in_str = False
+    escape = False
+    for i, ch in enumerate(text):
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+            continue
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start != -1:
+                    candidates.append(text[start : i + 1])
+                    start = -1
+    for cand in sorted(candidates, key=len, reverse=True):
+        try:
+            return json.loads(cand)
+        except Exception:
+            continue
     raise ValueError("No JSON object found in response")
+
+
+def coerce_analyze_fields(data: dict) -> tuple[str, int, str, str]:
+    """Flatten the AI response into (name, protein, note, source).
+
+    Handles cases where Gemini returns a list of components (for a mixed meal)
+    by summing protein and concatenating component names.
+    """
+    # Mixed-meal: items list
+    items = data.get("items") or data.get("components") or data.get("foods")
+    if isinstance(items, list) and items:
+        parts = []
+        total_protein = 0.0
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            parts.append(str(it.get("name") or "").strip())
+            try:
+                total_protein += float(it.get("protein") or 0)
+            except Exception:
+                pass
+        parts = [p for p in parts if p]
+        name = (
+            str(data.get("name") or "").strip()
+            or (", ".join(parts[:3]) if parts else "Mixed plate")
+        )
+        protein = int(round(total_protein or float(data.get("protein") or 0)))
+        note = str(data.get("note") or "").strip()
+        source = str(data.get("source") or "").strip().lower()
+        return name, protein, note, source
+
+    name = str(data.get("name") or data.get("food") or "Meal").strip()
+    try:
+        protein = int(round(float(data.get("protein") or data.get("protein_g") or 0)))
+    except Exception:
+        protein = 0
+    note = str(data.get("note") or data.get("description") or "").strip()
+    source = str(data.get("source") or "").strip().lower()
+    return name, protein, note, source
 
 
 # ---------- Routes ----------
@@ -166,8 +241,9 @@ async def analyze_food(req: AnalyzeRequest):
     image = ImageContent(image_base64=req.imageBase64)
     user_msg = UserMessage(
         text=(
-            "Identify this food and estimate the total grams of protein in the entire "
-            "visible portion. Respond with strict JSON only."
+            "Identify every protein-contributing item on the plate and return the "
+            "summed total protein in grams for the visible portion. Reply with strict "
+            "JSON only, matching the schema described in the system message."
         ),
         file_contents=[image],
     )
@@ -180,16 +256,16 @@ async def analyze_food(req: AnalyzeRequest):
 
     try:
         data = extract_json(str(raw))
-        name = str(data.get("name") or "Meal").strip()[:60]
-        protein = int(round(float(data.get("protein") or 0)))
-        protein = max(0, min(protein, 300))
-        note = str(data.get("note") or "").strip()[:140]
-        source = str(data.get("source") or "").strip().lower()
+        name, protein, note, source = coerce_analyze_fields(data)
+        name = (name or "Meal")[:80]
+        protein = max(0, min(protein, 500))
+        note = note[:140]
         if source not in ("animal", "plant", "supplement"):
             source = "animal"
     except Exception as e:
         logger.exception("Parse error: %s | raw=%s", e, raw)
-        raise HTTPException(status_code=502, detail="Could not parse AI response")
+        # Graceful fallback: log a zero-protein entry so the user still sees something
+        name, protein, note, source = "Meal", 0, "Couldn't read this one — tap ✎ to edit.", "animal"
 
     return AnalyzeResponse(
         name=name,
