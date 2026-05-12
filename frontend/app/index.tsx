@@ -76,7 +76,7 @@ function calcProtein(weightLbs: number, goal: Goal, age: number) {
 
 const GOAL_OPTIONS: { id: Goal; label: string; emoji: string; desc: string }[] = [
   { id: "maintain", label: "Stay healthy", emoji: "🌿", desc: "Maintain muscle & wellness" },
-  { id: "lose", label: "Lose weight", emoji: "✨", desc: "Preserve lean muscle mass" },
+  { id: "lose", label: "Lose weight", emoji: "✨", desc: "Preserve lean mass" },
   { id: "build", label: "Build muscle", emoji: "💪", desc: "Support strength & hypertrophy" },
   { id: "active", label: "Athletic", emoji: "🏃", desc: "High-performance fuelling" },
 ];
@@ -85,11 +85,11 @@ const FOOD_SOURCES = [
   { emoji: "🥚", name: "Eggs", g: 6, per: "per egg" },
   { emoji: "🐟", name: "Salmon", g: 34, per: "per 100g" },
   { emoji: "🍗", name: "Chicken breast", g: 31, per: "per 100g" },
-  { emoji: "🫘", name: "Lentils", g: 18, per: "per cup" },
-  { emoji: "🥛", name: "Greek yogurt", g: 17, per: "per 170g" },
-  { emoji: "🌰", name: "Edamame", g: 17, per: "per cup" },
-  { emoji: "🧀", name: "Cottage cheese", g: 25, per: "per cup" },
-  { emoji: "🫙", name: "Tofu", g: 20, per: "per cup" },
+  { emoji: "🟤", name: "Lentils", g: 18, per: "per cup" },
+  { emoji: "🥣", name: "Greek yogurt", g: 17, per: "per 170g" },
+  { emoji: "🫛", name: "Edamame", g: 17, per: "per cup" },
+  { emoji: "🍚", name: "Cottage cheese", g: 25, per: "per cup" },
+  { emoji: "🧊", name: "Tofu", g: 20, per: "per cup" },
 ];
 
 const TABS = ["today", "calculator", "sources", "week", "month"] as const;
@@ -400,16 +400,32 @@ export default function Nuura() {
 
   const loadTodayMeals = async (id: string) => {
     const date = todayStr();
+    // Local cache is the source of truth for imageUrls (backend doesn't store them)
+    let localEntries: MealEntry[] = [];
+    const local = await AsyncStorage.getItem(`nuura_meals_${date}`);
+    if (local) {
+      try {
+        localEntries = JSON.parse(local);
+      } catch {}
+    }
     try {
       const r = await fetch(`${API}/meals?user_id=${id}&date=${date}`);
       if (r.ok) {
-        const data = await r.json();
-        setEntries(data);
+        const data: MealEntry[] = await r.json();
+        // Merge: server is source of truth, but graft imageUrl from local cache by id
+        const imgById: Record<string, string> = {};
+        localEntries.forEach((e) => {
+          if (e.id && e.imageUrl) imgById[e.id] = e.imageUrl;
+        });
+        const merged = data.map((e) =>
+          e.id && imgById[e.id] ? { ...e, imageUrl: imgById[e.id] } : e
+        );
+        setEntries(merged);
+        await AsyncStorage.setItem(`nuura_meals_${date}`, JSON.stringify(merged));
         return;
       }
     } catch {}
-    const local = await AsyncStorage.getItem(`nuura_meals_${date}`);
-    if (local) setEntries(JSON.parse(local));
+    setEntries(localEntries);
   };
 
   const loadWeekTotals = async (id: string) => {
@@ -1470,7 +1486,12 @@ function MonthView({
   const avg = Math.round(totals.reduce((a, b) => a + b, 0) / 30);
   const best = Math.max(...totals);
   const hits = totals.filter((v) => v >= dailyGoal).length;
-  const total30 = totals.reduce((a, b) => a + b, 0);
+  // Current streak = consecutive goal-hit days ending at today, walking backwards
+  let streak = 0;
+  for (let i = totals.length - 1; i >= 0; i--) {
+    if (totals[i] >= dailyGoal) streak++;
+    else break;
+  }
 
   const cellColor = (v: number) => {
     if (v <= 0) return C.sub;
@@ -1551,7 +1572,7 @@ function MonthView({
             { label: "Avg / day", val: `${avg}g` },
             { label: "Best day", val: `${best}g` },
             { label: "Goals hit", val: `${hits}/30` },
-            { label: "Total", val: `${total30}g` },
+            { label: "Current streak", val: streak > 0 ? `${streak} day${streak === 1 ? "" : "s"} 🔥` : "—" },
           ].map((s) => (
             <View
               key={s.label}
