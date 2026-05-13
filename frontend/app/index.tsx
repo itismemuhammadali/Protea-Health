@@ -18,6 +18,8 @@ import {
 } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import * as ImagePicker from "expo-image-picker";
+import * as StoreReview from "expo-store-review";
+import { Linking } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFonts } from "expo-font";
 import {
@@ -34,7 +36,7 @@ import {
 } from "@expo-google-fonts/jost";
 
 // ---------- Config ----------
-const APP_NAME = "nuura";
+const APP_NAME = "prōa";
 const APP_TAGLINE = "protein, personalized for you";
 const BACKEND = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const API = `${BACKEND}/api`;
@@ -92,7 +94,7 @@ const FOOD_SOURCES = [
   { emoji: "⬜", name: "Tofu", g: 20, per: "per cup" },
 ];
 
-const TABS = ["today", "calculator", "sources", "progress"] as const;
+const TABS = ["today", "calculator", "sources", "progress", "me"] as const;
 type Tab = (typeof TABS)[number];
 
 const todayStr = () => {
@@ -296,6 +298,13 @@ export default function Nuura() {
   const GLP1_MULTIPLIER = 1.15;
   const glp1Preview = useMemo(() => Math.round(dailyGoal * GLP1_MULTIPLIER), [dailyGoal]);
 
+  // "Me" tab subsheets & rate prompt
+  const [meSheet, setMeSheet] = useState<null | "about" | "notif" | "privacy" | "terms" | "contact">(null);
+  const [showRatePrompt, setShowRatePrompt] = useState(false);
+  const [notifDaily, setNotifDaily] = useState(false);
+  const [notifTime, setNotifTime] = useState("12:00 PM");
+  const [notifGoalCelebrate, setNotifGoalCelebrate] = useState(true);
+
   const [weekTotals, setWeekTotals] = useState<Record<string, number>>({});
   const [monthTotals, setMonthTotals] = useState<Record<string, number>>({});
 
@@ -456,6 +465,14 @@ export default function Nuura() {
       const glp1Flag = await AsyncStorage.getItem("nuura_glp1_active");
       setGlp1Active(glp1Flag === "true");
 
+      // Load notification preferences
+      const nd = await AsyncStorage.getItem("notif_daily_on");
+      setNotifDaily(nd === "true");
+      const nt = await AsyncStorage.getItem("notif_daily_time");
+      if (nt) setNotifTime(nt);
+      const ngc = await AsyncStorage.getItem("notif_goal_celebrate");
+      setNotifGoalCelebrate(ngc !== "false");
+
       await loadTodayMeals(id);
       await loadWeekTotals(id);
       await loadMonthTotals(id);
@@ -608,6 +625,16 @@ export default function Nuura() {
       await AsyncStorage.setItem(`nuura_meals_${date}`, JSON.stringify(updated));
       await loadWeekTotals(userId);
       await loadMonthTotals(userId);
+      // ----- Lifetime meal counter (for review prompt) -----
+      try {
+        const cur = await AsyncStorage.getItem("total_meals_logged");
+        const next = (parseInt(cur || "0", 10) || 0) + 1;
+        await AsyncStorage.setItem("total_meals_logged", String(next));
+        if (next === 7) {
+          // Defer slightly so the toast can render first
+          setTimeout(() => setShowRatePrompt(true), 800);
+        }
+      } catch {}
       showToast(`+${food.protein}g logged ✦`);
     } catch (e: any) {
       Alert.alert("Couldn't analyze", "Something went wrong. Please try again.");
@@ -617,26 +644,24 @@ export default function Nuura() {
   };
 
   // ----- Calculator -----
-  const runCalc = () => {
+  const runCalc = async () => {
     if (!weight || isNaN(Number(weight))) {
       Alert.alert("Enter your weight", "Please type your weight to calculate your goal.");
       return;
     }
     const wLbs = unit === "kg" ? parseFloat(weight) * 2.20462 : parseFloat(weight);
     const a = parseInt(age) || 30;
-    setCalcResult(calcProtein(wLbs, fitnessGoal, a));
-  };
-
-  const applyGoal = async () => {
-    if (!calcResult) return;
-    setDailyGoal(calcResult);
+    const computed = calcProtein(wLbs, fitnessGoal, a);
+    setCalcResult(computed);
+    // Auto-apply the goal — no separate confirmation step on the Goal tab
+    setDailyGoal(computed);
     const profile = {
       user_id: userId,
       weight: parseFloat(weight) || 0,
       unit,
       age: parseInt(age) || 30,
       fitnessGoal,
-      dailyGoal: calcResult,
+      dailyGoal: computed,
     };
     await AsyncStorage.setItem("nuura_profile", JSON.stringify(profile));
     try {
@@ -646,6 +671,18 @@ export default function Nuura() {
         body: JSON.stringify(profile),
       });
     } catch {}
+    // If GLP-1 was active, applying a fresh calc resets the baseline
+    if (glp1Active) {
+      await AsyncStorage.setItem("nuura_daily_goal_pre_glp1", String(computed));
+    }
+    showToast(`Daily goal set to ${computed}g ✦`);
+    setShowOnboarding(false);
+    setTab("today");
+  };
+
+  const applyGoal = async () => {
+    // Kept for backwards compatibility — runCalc already applies
+    if (!calcResult) return;
     showToast(`Daily goal set to ${calcResult}g ✦`);
     setShowOnboarding(false);
     setTab("today");
@@ -898,6 +935,14 @@ export default function Nuura() {
             <MonthView monthTotals={monthTotals} dailyGoal={dailyGoal} todayTotal={total} />
           </>
         )}
+
+        {/* ───── ME ───── */}
+        {tab === "me" && (
+          <MeView
+            onOpen={(k) => setMeSheet(k)}
+            onRate={() => setShowRatePrompt(true)}
+          />
+        )}
       </ScrollView>
 
       {/* BOTTOM TAB BAR */}
@@ -907,6 +952,7 @@ export default function Nuura() {
           { id: "calculator", icon: "✦", label: "Goal" },
           { id: "sources", icon: "❋", label: "Sources" },
           { id: "progress", icon: "◈", label: "Progress" },
+          { id: "me", icon: "♀", label: "Me" },
         ].map((t) => {
           const active = tab === t.id;
           return (
@@ -1234,6 +1280,155 @@ export default function Nuura() {
           </View>
         </View>
       </Modal>
+
+      {/* ME SUB-SHEETS (about / notif / privacy / terms / contact) */}
+      <Modal visible={!!meSheet} animationType="slide" transparent={false}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              borderBottomWidth: 1,
+              borderBottomColor: C.border,
+            }}
+          >
+            <TouchableOpacity
+              testID="me-sheet-close"
+              onPress={() => setMeSheet(null)}
+              hitSlop={10}
+              style={{ padding: 6 }}
+            >
+              <Text style={{ fontSize: 22, color: C.text }}>‹</Text>
+            </TouchableOpacity>
+            <Text
+              style={{
+                flex: 1,
+                fontFamily: "CormorantGaramond_700Bold",
+                fontSize: 22,
+                color: C.text,
+                textAlign: "center",
+                marginRight: 28,
+              }}
+            >
+              {meSheet === "about" ? "About prōa" :
+                meSheet === "notif" ? "Notifications" :
+                meSheet === "privacy" ? "Privacy policy" :
+                meSheet === "terms" ? "Terms & conditions" :
+                meSheet === "contact" ? "Contact & feedback" : ""}
+            </Text>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 60, gap: 14 }}>
+            {meSheet === "about" && <AboutContent />}
+            {meSheet === "notif" && (
+              <NotificationsContent
+                daily={notifDaily}
+                onDailyToggle={async (v) => {
+                  setNotifDaily(v);
+                  await AsyncStorage.setItem("notif_daily_on", v ? "true" : "false");
+                }}
+                time={notifTime}
+                onTimeChange={async (t) => {
+                  setNotifTime(t);
+                  await AsyncStorage.setItem("notif_daily_time", t);
+                }}
+                celebrate={notifGoalCelebrate}
+                onCelebrateToggle={async (v) => {
+                  setNotifGoalCelebrate(v);
+                  await AsyncStorage.setItem("notif_goal_celebrate", v ? "true" : "false");
+                }}
+              />
+            )}
+            {meSheet === "privacy" && <PrivacyContent />}
+            {meSheet === "terms" && <TermsContent />}
+            {meSheet === "contact" && <ContactContent />}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* RATE PROMPT */}
+      <Modal visible={showRatePrompt} animationType="fade" transparent>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(42,31,46,0.55)",
+            justifyContent: "center",
+            padding: 28,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: C.bg,
+              borderRadius: 24,
+              padding: 24,
+              gap: 12,
+              alignItems: "center",
+              ...SHADOW,
+            }}
+          >
+            <Text
+              style={{
+                fontFamily: "CormorantGaramond_700Bold",
+                fontSize: 28,
+                color: C.text,
+                textAlign: "center",
+              }}
+            >
+              Enjoying prōa?
+            </Text>
+            <Text
+              style={{
+                fontFamily: "CormorantGaramond_400Regular_Italic",
+                fontSize: 15,
+                color: C.muted,
+                textAlign: "center",
+                lineHeight: 22,
+              }}
+            >
+              Your review helps other women discover the app.
+            </Text>
+            <Text style={{ fontSize: 30, letterSpacing: 4, color: C.accent, marginTop: 4 }}>
+              ★ ★ ★ ★ ★
+            </Text>
+            <TouchableOpacity
+              testID="rate-now-btn"
+              activeOpacity={0.85}
+              onPress={async () => {
+                setShowRatePrompt(false);
+                try {
+                  if (await StoreReview.hasAction()) {
+                    StoreReview.requestReview();
+                  }
+                } catch {}
+              }}
+              style={{
+                backgroundColor: C.primary,
+                paddingVertical: 14,
+                paddingHorizontal: 18,
+                borderRadius: 18,
+                alignItems: "center",
+                alignSelf: "stretch",
+                marginTop: 6,
+              }}
+            >
+              <Text style={{ color: "#fff", fontFamily: "Jost_600SemiBold", fontSize: 14 }}>
+                Rate prōa on the App Store
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="rate-later-btn"
+              activeOpacity={0.85}
+              onPress={() => setShowRatePrompt(false)}
+              style={{ paddingVertical: 10 }}
+            >
+              <Text style={{ color: C.muted, fontFamily: "Jost_500Medium", fontSize: 13 }}>
+                Maybe later
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1415,56 +1610,9 @@ function CalculatorView({
 
       <View style={{ marginTop: 18 }}>
         <PrimaryButton testID="calc-submit-btn" onPress={runCalc}>
-          Calculate my protein goal
+          Set my protein goal
         </PrimaryButton>
       </View>
-
-      {calcResult ? (
-        <View
-          style={{
-            marginTop: 18,
-            padding: 18,
-            borderRadius: 22,
-            backgroundColor: `${C.primary}10`,
-            borderWidth: 1,
-            borderColor: `${C.primary}40`,
-            alignItems: "center",
-          }}
-          testID="calc-result"
-        >
-          <Text style={{ fontFamily: "Jost_500Medium", color: C.muted, fontSize: 11, letterSpacing: 1 }}>
-            YOUR PERSONALIZED GOAL
-          </Text>
-          <Text
-            style={{
-              fontFamily: "CormorantGaramond_700Bold",
-              fontSize: 64,
-              color: C.primary,
-              marginTop: 4,
-            }}
-          >
-            {calcResult}
-            <Text style={{ fontSize: 24 }}>g/day</Text>
-          </Text>
-          <Text
-            style={{
-              fontFamily: "CormorantGaramond_400Regular_Italic",
-              fontSize: 14,
-              color: C.text,
-              marginTop: 6,
-              textAlign: "center",
-            }}
-          >
-            Based on your weight{age ? `, age ${age}` : ""} and{" "}
-            {GOAL_OPTIONS.find((g) => g.id === fitnessGoal)?.label.toLowerCase()} goal.
-          </Text>
-          <View style={{ width: "100%", marginTop: 14 }}>
-            <PrimaryButton testID="apply-goal-btn" onPress={applyGoal}>
-              Set as my daily goal →
-            </PrimaryButton>
-          </View>
-        </View>
-      ) : null}
 
       <Text
         style={{
@@ -1967,3 +2115,512 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 });
+
+// ---------- "Me" tab ----------
+const SUPPORT_EMAIL = "hello@proa.app";
+
+function MeRow({
+  emoji,
+  title,
+  subtitle,
+  onPress,
+  testID,
+}: {
+  emoji: string;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+  testID?: string;
+}) {
+  return (
+    <TouchableOpacity
+      testID={testID}
+      onPress={onPress}
+      activeOpacity={0.85}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 14,
+        padding: 16,
+        backgroundColor: C.surface,
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: C.border,
+      }}
+    >
+      <View
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: 14,
+          backgroundColor: C.sub,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Text style={{ fontSize: 22 }}>{emoji}</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontFamily: "Jost_600SemiBold", color: C.text, fontSize: 15 }}>
+          {title}
+        </Text>
+        <Text
+          style={{
+            fontFamily: "CormorantGaramond_400Regular_Italic",
+            color: C.muted,
+            fontSize: 13,
+            marginTop: 2,
+          }}
+        >
+          {subtitle}
+        </Text>
+      </View>
+      <Text style={{ color: C.muted, fontSize: 22 }}>›</Text>
+    </TouchableOpacity>
+  );
+}
+
+function MeView({
+  onOpen,
+  onRate,
+}: {
+  onOpen: (k: "about" | "notif" | "privacy" | "terms" | "contact") => void;
+  onRate: () => void;
+}) {
+  return (
+    <View style={{ gap: 14 }}>
+      <View style={{ alignItems: "center", marginBottom: 4 }}>
+        <View
+          style={{
+            width: 80,
+            height: 80,
+            borderRadius: 40,
+            backgroundColor: `${C.primary}20`,
+            alignItems: "center",
+            justifyContent: "center",
+            ...SHADOW,
+          }}
+        >
+          <Text style={{ fontSize: 40, color: C.primary }}>♀</Text>
+        </View>
+        <Text
+          style={{
+            fontFamily: "CormorantGaramond_700Bold",
+            fontSize: 28,
+            color: C.text,
+            marginTop: 10,
+          }}
+        >
+          your prōa
+        </Text>
+        <Text
+          style={{
+            fontFamily: "CormorantGaramond_400Regular_Italic",
+            fontSize: 14,
+            color: C.muted,
+          }}
+        >
+          one nutrient. one goal. every day.
+        </Text>
+      </View>
+
+      <MeRow
+        testID="me-about"
+        emoji="✦"
+        title="About prōa"
+        subtitle="The story behind the app"
+        onPress={() => onOpen("about")}
+      />
+      <MeRow
+        testID="me-notif"
+        emoji="◎"
+        title="Notification settings"
+        subtitle="Reminders & celebrations"
+        onPress={() => onOpen("notif")}
+      />
+      <MeRow
+        testID="me-privacy"
+        emoji="❋"
+        title="Privacy policy"
+        subtitle="Your data, your rules"
+        onPress={() => onOpen("privacy")}
+      />
+      <MeRow
+        testID="me-terms"
+        emoji="◈"
+        title="Terms & conditions"
+        subtitle="The fine print"
+        onPress={() => onOpen("terms")}
+      />
+      <MeRow
+        testID="me-rate"
+        emoji="★"
+        title="Rate the app"
+        subtitle="Help other women find prōa"
+        onPress={onRate}
+      />
+      <MeRow
+        testID="me-contact"
+        emoji="✉"
+        title="Contact & feedback"
+        subtitle="We'd love to hear from you"
+        onPress={() => onOpen("contact")}
+      />
+    </View>
+  );
+}
+
+function AboutContent() {
+  const Para = (props: { children: React.ReactNode; italic?: boolean; head?: boolean }) => (
+    <Text
+      style={{
+        fontFamily: props.italic
+          ? "CormorantGaramond_400Regular_Italic"
+          : props.head
+          ? "CormorantGaramond_700Bold"
+          : "Jost_400Regular",
+        fontSize: props.head ? 22 : 14,
+        color: C.text,
+        lineHeight: props.head ? 28 : 22,
+        marginTop: props.head ? 8 : 0,
+      }}
+    >
+      {props.children}
+    </Text>
+  );
+  return (
+    <View style={{ gap: 10 }}>
+      <Para head>prōa means first in Greek.</Para>
+      <Para italic>
+        It's what protein is — your first nutrient, your most essential fuel, the one thing that
+        changes everything when women finally get enough of it.
+      </Para>
+      <Para>
+        Most nutrition apps were built for men, optimized for bodybuilders, or designed to make
+        you obsessed with every calorie. prōa is different. We track one thing — protein — because
+        for women, it's the single most impactful nutritional change you can make. Protein builds
+        and preserves muscle. It keeps you full, supports your hormones, stabilizes your energy,
+        and becomes even more critical as you age. Most women eat far less than they need — not
+        because they don't care, but because no one ever told them clearly how much to aim for,
+        or made it easy to track. prōa fixes that.
+      </Para>
+      <Para head>The GLP-1 generation needs protein more than ever.</Para>
+      <Para>
+        Medications like Ozempic, Wegovy, and Mounjaro are changing how millions of women eat.
+        When appetite is suppressed, total food intake drops — and with it, the risk of losing not
+        just fat but vital muscle mass. Researchers and clinicians now agree — women on GLP-1
+        medications need to be deliberate and consistent about hitting their protein targets every
+        single day to protect the muscle they have worked so hard to build. prōa was designed for
+        exactly this. When you're eating less, every gram counts.
+      </Para>
+      <Para head>Snap a meal.</Para>
+      <Para>
+        Our AI reads your plate and estimates protein in seconds — no barcode scanning, no
+        searching databases, no logging every ingredient. Just point your camera and go.
+      </Para>
+      <Para head>Set a goal that's actually yours.</Para>
+      <Para>
+        prōa calculates your daily protein target based on your weight, age, and goals — using
+        the same science sports nutritionists use, adjusted specifically for women. If you're
+        over 50 or taking a GLP-1 medication, your target is higher, not lower. We're one of
+        the very few apps that adjusts for this.
+      </Para>
+      <Para head>See your progress at a glance.</Para>
+      <Para>No overwhelming dashboards. No guilt. Just a simple, beautiful view of how you're doing and encouragement to keep going.</Para>
+      <Para head>Your privacy is foundational, not an afterthought.</Para>
+      <Para>
+        When you photograph a meal, that image is analyzed instantly and never stored on our
+        servers. We do not build profiles. We do not sell your data. We do not share your
+        information with third parties or advertisers. Your health information belongs to you
+        and only you.
+      </Para>
+      <Para head>Built by women who understand the science.</Para>
+      <Para>
+        prōa was created by a Harvard PhD with experience in the pharmaceutical and wellness
+        sectors as well as an MIT computer science grad — bringing together rigorous technical
+        expertise and deep academic research to build something the wellness industry has
+        overlooked for too long: a nutrition tool designed from the ground up with women's
+        physiology, privacy, and real lives in mind.
+      </Para>
+      <Para italic>
+        prōa is for the woman who wants to feel strong, not just thin. Who wants to fuel her
+        body, not punish it. Who is done with apps that make healthy eating feel like homework.
+        One nutrient. One goal. Every day.
+      </Para>
+      <Para>
+        <Text style={{ fontFamily: "Jost_500Medium", color: C.muted, fontSize: 12 }}>
+          prōa is not a medical app. Protein estimates are approximations and should not replace
+          advice from a qualified healthcare professional or registered dietitian.
+        </Text>
+      </Para>
+    </View>
+  );
+}
+
+function NotificationsContent({
+  daily,
+  onDailyToggle,
+  time,
+  onTimeChange,
+  celebrate,
+  onCelebrateToggle,
+}: {
+  daily: boolean;
+  onDailyToggle: (v: boolean) => void;
+  time: string;
+  onTimeChange: (t: string) => void;
+  celebrate: boolean;
+  onCelebrateToggle: (v: boolean) => void;
+}) {
+  const times = ["8:00 AM", "10:00 AM", "12:00 PM", "2:00 PM", "5:00 PM", "7:00 PM"];
+  const [showTimes, setShowTimes] = useState(false);
+  const Toggle = ({ on, onPress }: { on: boolean; onPress: () => void }) => (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={onPress}
+      style={{
+        width: 46,
+        height: 28,
+        borderRadius: 14,
+        padding: 3,
+        backgroundColor: on ? C.primary : C.border,
+        justifyContent: "center",
+      }}
+    >
+      <View
+        style={{
+          width: 22,
+          height: 22,
+          borderRadius: 11,
+          backgroundColor: "#fff",
+          alignSelf: on ? "flex-end" : "flex-start",
+        }}
+      />
+    </TouchableOpacity>
+  );
+  return (
+    <View style={{ gap: 14 }}>
+      <Card>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontFamily: "Jost_600SemiBold", color: C.text, fontSize: 15 }}>
+              Daily protein reminder
+            </Text>
+            <Text
+              style={{
+                fontFamily: "CormorantGaramond_400Regular_Italic",
+                color: C.muted,
+                fontSize: 13,
+                marginTop: 2,
+              }}
+            >
+              Remind me to log my meals
+            </Text>
+          </View>
+          <Toggle on={daily} onPress={() => onDailyToggle(!daily)} />
+        </View>
+        {daily && (
+          <View style={{ marginTop: 14 }}>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => setShowTimes((v) => !v)}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: C.sub,
+                padding: 12,
+                borderRadius: 14,
+              }}
+            >
+              <Text style={{ flex: 1, fontFamily: "Jost_500Medium", color: C.text, fontSize: 14 }}>
+                Time: {time}
+              </Text>
+              <Text style={{ color: C.muted, fontSize: 16 }}>▾</Text>
+            </TouchableOpacity>
+            {showTimes && (
+              <View style={{ marginTop: 8, flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {times.map((t) => (
+                  <TouchableOpacity
+                    key={t}
+                    onPress={() => {
+                      onTimeChange(t);
+                      setShowTimes(false);
+                    }}
+                    activeOpacity={0.85}
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: time === t ? C.primary : C.border,
+                      backgroundColor: time === t ? `${C.primary}15` : C.surface,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: "Jost_500Medium",
+                        color: time === t ? C.primary : C.text,
+                        fontSize: 13,
+                      }}
+                    >
+                      {t}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+      </Card>
+
+      <Card>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontFamily: "Jost_600SemiBold", color: C.text, fontSize: 15 }}>
+              Goal celebration
+            </Text>
+            <Text
+              style={{
+                fontFamily: "CormorantGaramond_400Regular_Italic",
+                color: C.muted,
+                fontSize: 13,
+                marginTop: 2,
+              }}
+            >
+              Notify me when I hit my daily goal
+            </Text>
+          </View>
+          <Toggle on={celebrate} onPress={() => onCelebrateToggle(!celebrate)} />
+        </View>
+      </Card>
+
+      <Text
+        style={{
+          fontFamily: "CormorantGaramond_400Regular_Italic",
+          color: C.muted,
+          fontSize: 12,
+          marginTop: 4,
+          lineHeight: 18,
+        }}
+      >
+        Preferences are saved on this device. Actual push notifications require permission and
+        will be scheduled the first time you enable them.
+      </Text>
+    </View>
+  );
+}
+
+function PolicyText({ children }: { children: React.ReactNode }) {
+  return (
+    <Text
+      style={{
+        fontFamily: "Jost_400Regular",
+        fontSize: 14,
+        color: C.text,
+        lineHeight: 22,
+      }}
+    >
+      {children}
+    </Text>
+  );
+}
+
+function PrivacyContent() {
+  return (
+    <View style={{ gap: 12 }}>
+      <Text style={{ fontFamily: "CormorantGaramond_700Bold", fontSize: 22, color: C.text }}>
+        Privacy is foundational, not an afterthought.
+      </Text>
+      <PolicyText>
+        When you photograph a meal, that image is analyzed instantly and never stored on our
+        servers. We do not build profiles. We do not sell your data. We do not share your
+        information with third parties or advertisers. Your health information belongs to you
+        and only you.
+      </PolicyText>
+      <PolicyText>
+        We store an anonymous per-device identifier so your goal and meal history sync between
+        sessions, but it's never tied to your name, email, or social accounts unless you
+        explicitly contact us. You can clear all locally stored data at any time by uninstalling
+        the app.
+      </PolicyText>
+      <PolicyText>
+        We use Google's Gemini vision model to analyze your food photos. Photos are sent over
+        encrypted HTTPS, processed in-flight, and discarded — they are never persisted by prōa
+        or used to train models.
+      </PolicyText>
+    </View>
+  );
+}
+
+function TermsContent() {
+  return (
+    <View style={{ gap: 12 }}>
+      <Text style={{ fontFamily: "CormorantGaramond_700Bold", fontSize: 22, color: C.text }}>
+        Terms & conditions
+      </Text>
+      <PolicyText>
+        prōa is provided "as is" for informational and self-tracking purposes only. By using
+        prōa you agree that protein estimates are approximations based on AI vision and visible
+        portion size — they are not a substitute for advice from a qualified healthcare
+        professional or registered dietitian.
+      </PolicyText>
+      <PolicyText>
+        prōa is not a medical device. Do not rely on prōa for medical decisions, including those
+        relating to weight loss medications, eating disorders, pregnancy, or chronic illness.
+        Always consult your physician or dietitian for personal nutrition guidance.
+      </PolicyText>
+      <PolicyText>
+        You're responsible for the content you photograph and share. Don't upload photos that
+        infringe someone else's privacy or rights.
+      </PolicyText>
+      <PolicyText>
+        We may update these terms as the product evolves; continued use of prōa constitutes
+        acceptance of the latest version.
+      </PolicyText>
+    </View>
+  );
+}
+
+function ContactContent() {
+  const open = (subject: string, body: string) => {
+    const url = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    Linking.openURL(url).catch(() => {});
+  };
+  return (
+    <View style={{ gap: 12 }}>
+      <MeRow
+        testID="contact-feedback"
+        emoji="✍️"
+        title="Send feedback"
+        subtitle="Tell us what you love or what could be better"
+        onPress={() => open("prōa Feedback", "App version: 1.0.0\n\n")}
+      />
+      <MeRow
+        testID="contact-bug"
+        emoji="⚠️"
+        title="Report a bug"
+        subtitle="Something not working right? Let us know"
+        onPress={() => open("prōa Bug Report", "Describe what happened:\n\n")}
+      />
+      <MeRow
+        testID="contact-feature"
+        emoji="💡"
+        title="Request a feature"
+        subtitle="Have an idea for prōa? We want to hear it"
+        onPress={() => open("prōa Feature Request", "My idea:\n\n")}
+      />
+      <Text
+        style={{
+          fontFamily: "CormorantGaramond_400Regular_Italic",
+          color: C.muted,
+          fontSize: 13,
+          marginTop: 8,
+          textAlign: "center",
+        }}
+      >
+        We read everything that lands at {SUPPORT_EMAIL}.
+      </Text>
+    </View>
+  );
+}
+

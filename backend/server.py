@@ -213,7 +213,7 @@ def coerce_analyze_fields(data: dict) -> tuple[str, int, str, str]:
 # ---------- Routes ----------
 @api_router.get("/")
 async def root():
-    return {"app": "nuura", "ok": True}
+    return {"app": "proa", "ok": True}
 
 
 @api_router.post("/analyze", response_model=AnalyzeResponse)
@@ -224,26 +224,46 @@ async def analyze_food(req: AnalyzeRequest):
         raise HTTPException(status_code=400, detail="imageBase64 is required")
 
     system_msg = (
-        "You are a nutrition vision expert. Look at the food photo and estimate the "
-        "protein content in grams. Return ONLY a compact JSON object with keys: "
-        '"name" (short food name, max 4 words), "protein" (integer grams of protein in '
-        'the entire visible portion), "note" (one short, friendly sentence about the '
-        'food\'s protein quality, max 12 words), "source" (one of "animal", "plant", '
-        '"supplement" — supplement covers protein powders/bars/shakes). No prose, no markdown.'
+        "You are a careful nutrition vision expert. Be CONSERVATIVE — overestimating "
+        "protein is worse than underestimating. Use realistic portion sizes and the "
+        "approximate protein concentrations below; never round portions up.\n\n"
+        "STEP 1 — Estimate portion mass in grams using visual cues for depth, plate "
+        "diameter (a standard dinner plate is 25-28 cm), bowl/cup volume, container "
+        "labels if visible (a 75g bag is 75g, not 150g), serving-size benchmarks "
+        "(1 deck of cards ≈ 85g of meat, 1 cupped hand ≈ 30g of nuts/chips, a chicken "
+        "breast ≈ 150-200g, an egg ≈ 50g, a slice of bread ≈ 30g, 1 cup of yogurt ≈ "
+        "240g). If you can see a packaging weight/serving on the label, trust THAT.\n\n"
+        "STEP 2 — Apply realistic protein percentages (per 100g): chicken/turkey 25-31g, "
+        "beef/pork 20-26g, salmon/tuna 22-25g, white fish 18-22g, eggs 12g, hard cheese "
+        "20-25g, cottage cheese 11g, Greek yogurt 10g, regular yogurt 3-4g, tofu 8g, "
+        "lentils/beans cooked 8-9g, edamame 11g, rice cooked 2.5g, pasta cooked 5g, "
+        "bread 8-9g, nuts 15-25g, potato chips/crackers 6-8g, fruit 1g, leafy veg 2-3g, "
+        "whey/protein bar varies (read label or use 20-25g per scoop/bar).\n\n"
+        "STEP 3 — Multiply: protein_g = portion_mass_g × (protein_per_100g / 100). "
+        "SUM across all visible components for mixed meals. Sanity-check the total — "
+        "if it exceeds 60g for a normal-looking single plate, reconsider.\n\n"
+        "Return ONLY one compact flat JSON object (no markdown, no prose). Schema:\n"
+        '{"name": short label max 4 words, '
+        '"protein": integer grams for the ENTIRE visible portion (0-500), '
+        '"note": one short friendly sentence max 12 words, '
+        '"source": one of "animal" | "plant" | "supplement" — pick the dominant source.}'
     )
 
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
-        session_id=f"nuura-analyze-{uuid.uuid4()}",
+        session_id=f"proa-analyze-{uuid.uuid4()}",
         system_message=system_msg,
     ).with_model("gemini", "gemini-2.5-flash")
 
     image = ImageContent(image_base64=req.imageBase64)
     user_msg = UserMessage(
         text=(
-            "Identify every protein-contributing item on the plate and return the "
-            "summed total protein in grams for the visible portion. Reply with strict "
-            "JSON only, matching the schema described in the system message."
+            "Identify every protein-contributing item on the plate. For each, estimate "
+            "the portion mass in grams using visual cues (plate size, depth, container "
+            "labels). Then apply realistic protein-per-100g values. SUM across items. "
+            "Be conservative — when in doubt, pick the lower estimate. If you can see a "
+            "packaging weight (e.g. '75g bag'), use exactly that mass. Reply with strict "
+            "JSON only, matching the schema in the system message."
         ),
         file_contents=[image],
     )
