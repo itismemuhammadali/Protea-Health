@@ -1221,7 +1221,9 @@ export default function Nuura() {
                   marginTop: 4,
                 }}
               >
-                {glp1Snapshot.from}g → {glp1Snapshot.to}g
+                {glp1Snapshot.from || dailyGoal}g →{" "}
+                {glp1Snapshot.to ||
+                  Math.round((glp1Snapshot.from || dailyGoal) * GLP1_MULTIPLIER)}g
                 <Text style={{ fontSize: 16, color: C.muted }}> /day</Text>
               </Text>
             </View>
