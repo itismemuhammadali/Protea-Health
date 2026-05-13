@@ -405,7 +405,12 @@ export default function Nuura() {
 
   const onGLP1ToggleChange = async (val: boolean) => {
     if (val) {
-      // Show confirmation modal — only persist on Apply
+      // Freeze the BEFORE/AFTER numbers when the toggle is flipped so the
+      // modal can't drift mid-Apply.
+      setGlp1Snapshot({
+        from: dailyGoal,
+        to: Math.round(dailyGoal * GLP1_MULTIPLIER),
+      });
       setShowGLP1Modal(true);
     } else {
       // Restore the original goal saved before GLP-1 was applied
@@ -421,19 +426,28 @@ export default function Nuura() {
   };
 
   const applyGLP1Goal = async () => {
-    const adjustedGoal = Math.round(dailyGoal * GLP1_MULTIPLIER);
-    await AsyncStorage.setItem("nuura_daily_goal_pre_glp1", String(dailyGoal));
+    // Read STRICTLY from the snapshot taken on toggle so the values never drift
+    const baseGoal = glp1Snapshot.from || dailyGoal;
+    const adjustedGoal =
+      glp1Snapshot.to || Math.round(baseGoal * GLP1_MULTIPLIER);
+    // Persist FIRST so the new goal is durable
+    await AsyncStorage.setItem("nuura_daily_goal_pre_glp1", String(baseGoal));
     await AsyncStorage.setItem("nuura_glp1_active", "true");
-    setGlp1Active(true);
-    setDailyGoal(adjustedGoal);
     await persistGoal(adjustedGoal);
+    // Close the modal immediately, but defer the header pill update until the
+    // modal fade-out has finished. Otherwise the user sees the daily-goal
+    // number tick over while the modal is mid-fade (the "flicker").
     setShowGLP1Modal(false);
-    showToast(`Goal updated to ${adjustedGoal}g ✦`);
+    setTimeout(() => {
+      setGlp1Active(true);
+      setDailyGoal(adjustedGoal);
+      showToast(`Goal updated to ${adjustedGoal}g ✦`);
+    }, 320);
   };
 
   const cancelGLP1 = () => {
     setShowGLP1Modal(false);
-    // toggle stays off — no state change needed since we only flip on Apply
+    setGlp1Snapshot({ from: 0, to: 0 });
   };
 
   // ----- Bootstrap -----
