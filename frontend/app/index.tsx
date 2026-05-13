@@ -651,17 +651,19 @@ export default function Nuura() {
     }
     const wLbs = unit === "kg" ? parseFloat(weight) * 2.20462 : parseFloat(weight);
     const a = parseInt(age) || 30;
-    const computed = calcProtein(wLbs, fitnessGoal, a);
-    setCalcResult(computed);
-    // Auto-apply the goal — no separate confirmation step on the Goal tab
-    setDailyGoal(computed);
+    const baseGoal = calcProtein(wLbs, fitnessGoal, a);
+    // If GLP-1 is currently active, the *applied* goal is base × 1.15. Store base
+    // separately so toggling GLP-1 off later restores cleanly.
+    const finalGoal = glp1Active ? Math.round(baseGoal * GLP1_MULTIPLIER) : baseGoal;
+    setCalcResult(finalGoal);
+    setDailyGoal(finalGoal);
     const profile = {
       user_id: userId,
       weight: parseFloat(weight) || 0,
       unit,
       age: parseInt(age) || 30,
       fitnessGoal,
-      dailyGoal: computed,
+      dailyGoal: finalGoal,
     };
     await AsyncStorage.setItem("nuura_profile", JSON.stringify(profile));
     try {
@@ -671,11 +673,10 @@ export default function Nuura() {
         body: JSON.stringify(profile),
       });
     } catch {}
-    // If GLP-1 was active, applying a fresh calc resets the baseline
     if (glp1Active) {
-      await AsyncStorage.setItem("nuura_daily_goal_pre_glp1", String(computed));
+      await AsyncStorage.setItem("nuura_daily_goal_pre_glp1", String(baseGoal));
     }
-    showToast(`Daily goal set to ${computed}g ✦`);
+    showToast(`Daily goal set to ${finalGoal}g ✦`);
     setShowOnboarding(false);
     setTab("today");
   };
