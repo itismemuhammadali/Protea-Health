@@ -1221,7 +1221,7 @@ export default function Nuura() {
                   marginTop: 4,
                 }}
               >
-                {glp1Snapshot.from || dailyGoal}g → {glp1Snapshot.to || Math.round((glp1Snapshot.from || dailyGoal) * GLP1_MULTIPLIER)}g
+                {glp1Snapshot.from}g → {glp1Snapshot.to}g
                 <Text style={{ fontSize: 16, color: C.muted }}> /day</Text>
               </Text>
             </View>
@@ -2348,10 +2348,10 @@ function AboutContent() {
       <Text
         style={{
           fontFamily: "CormorantGaramond_700Bold",
-          fontSize: 22,
+          fontSize: 16,
           color: C.text,
-          lineHeight: 30,
-          marginTop: 8,
+          lineHeight: 24,
+          marginTop: 6,
         }}
       >
         prōa is for the woman who wants to feel strong, not just thin. Who wants to fuel her
