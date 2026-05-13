@@ -89,10 +89,10 @@ const FOOD_SOURCES = [
   { emoji: "🥣", name: "Greek yogurt", g: 17, per: "per 170g" },
   { emoji: "🫛", name: "Edamame", g: 17, per: "per cup" },
   { emoji: "🍚", name: "Cottage cheese", g: 25, per: "per cup" },
-  { emoji: "🧊", name: "Tofu", g: 20, per: "per cup" },
+  { emoji: "⬜", name: "Tofu", g: 20, per: "per cup" },
 ];
 
-const TABS = ["today", "calculator", "sources", "week", "month"] as const;
+const TABS = ["today", "calculator", "sources", "progress"] as const;
 type Tab = (typeof TABS)[number];
 
 const todayStr = () => {
@@ -290,6 +290,12 @@ export default function Nuura() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(true);
 
+  // GLP-1
+  const [glp1Active, setGlp1Active] = useState(false);
+  const [showGLP1Modal, setShowGLP1Modal] = useState(false);
+  const GLP1_MULTIPLIER = 1.15;
+  const glp1Preview = useMemo(() => Math.round(dailyGoal * GLP1_MULTIPLIER), [dailyGoal]);
+
   const [weekTotals, setWeekTotals] = useState<Record<string, number>>({});
   const [monthTotals, setMonthTotals] = useState<Record<string, number>>({});
 
@@ -363,6 +369,62 @@ export default function Nuura() {
     ]);
   };
 
+  // ----- GLP-1 handlers -----
+  const persistGoal = async (goal: number) => {
+    // Update local profile cache + backend so the new goal sticks across reloads
+    try {
+      const raw = await AsyncStorage.getItem("nuura_profile");
+      const prof = raw ? JSON.parse(raw) : { user_id: userId };
+      const updated = { ...prof, user_id: userId, dailyGoal: goal };
+      await AsyncStorage.setItem("nuura_profile", JSON.stringify(updated));
+      await fetch(`${API}/profile`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: userId,
+          weight: updated.weight || 0,
+          unit: updated.unit || "lbs",
+          age: updated.age || 30,
+          fitnessGoal: updated.fitnessGoal || "maintain",
+          dailyGoal: goal,
+        }),
+      });
+    } catch {}
+  };
+
+  const onGLP1ToggleChange = async (val: boolean) => {
+    if (val) {
+      // Show confirmation modal — only persist on Apply
+      setShowGLP1Modal(true);
+    } else {
+      // Restore the original goal saved before GLP-1 was applied
+      const pre = await AsyncStorage.getItem("nuura_daily_goal_pre_glp1");
+      const restored = pre ? parseInt(pre, 10) : dailyGoal;
+      setGlp1Active(false);
+      setDailyGoal(restored);
+      await AsyncStorage.setItem("nuura_glp1_active", "false");
+      await AsyncStorage.removeItem("nuura_daily_goal_pre_glp1");
+      await persistGoal(restored);
+      showToast(`Goal restored to ${restored}g ✦`);
+    }
+  };
+
+  const applyGLP1Goal = async () => {
+    const adjustedGoal = Math.round(dailyGoal * GLP1_MULTIPLIER);
+    await AsyncStorage.setItem("nuura_daily_goal_pre_glp1", String(dailyGoal));
+    await AsyncStorage.setItem("nuura_glp1_active", "true");
+    setGlp1Active(true);
+    setDailyGoal(adjustedGoal);
+    await persistGoal(adjustedGoal);
+    setShowGLP1Modal(false);
+    showToast(`Goal updated to ${adjustedGoal}g ✦`);
+  };
+
+  const cancelGLP1 = () => {
+    setShowGLP1Modal(false);
+    // toggle stays off — no state change needed since we only flip on Apply
+  };
+
   // ----- Bootstrap -----
   useEffect(() => {
     (async () => {
@@ -390,6 +452,9 @@ export default function Nuura() {
       } else {
         setShowOnboarding(true);
       }
+
+      const glp1Flag = await AsyncStorage.getItem("nuura_glp1_active");
+      setGlp1Active(glp1Flag === "true");
 
       await loadTodayMeals(id);
       await loadWeekTotals(id);
@@ -816,6 +881,8 @@ export default function Nuura() {
             calcResult={calcResult}
             runCalc={runCalc}
             applyGoal={applyGoal}
+            glp1Active={glp1Active}
+            onGLP1Toggle={onGLP1ToggleChange}
           />
         )}
 
@@ -824,13 +891,13 @@ export default function Nuura() {
           <SourcesView entries={entries} total={total} />
         )}
 
-        {/* ───── WEEK ───── */}
-        {tab === "week" && (
-          <WeekView weekTotals={weekTotals} dailyGoal={dailyGoal} todayTotal={total} />
+        {/* ───── PROGRESS (week + month combined) ───── */}
+        {tab === "progress" && (
+          <>
+            <WeekView weekTotals={weekTotals} dailyGoal={dailyGoal} todayTotal={total} />
+            <MonthView monthTotals={monthTotals} dailyGoal={dailyGoal} todayTotal={total} />
+          </>
         )}
-
-        {/* ───── MONTH ───── */}
-        {tab === "month" && <MonthView monthTotals={monthTotals} dailyGoal={dailyGoal} todayTotal={total} />}
       </ScrollView>
 
       {/* BOTTOM TAB BAR */}
@@ -839,8 +906,7 @@ export default function Nuura() {
           { id: "today", icon: "◉", label: "Today" },
           { id: "calculator", icon: "✦", label: "Goal" },
           { id: "sources", icon: "❋", label: "Sources" },
-          { id: "week", icon: "◈", label: "Week" },
-          { id: "month", icon: "❖", label: "Month" },
+          { id: "progress", icon: "◈", label: "Progress" },
         ].map((t) => {
           const active = tab === t.id;
           return (
@@ -1032,10 +1098,141 @@ export default function Nuura() {
                 calcResult={calcResult}
                 runCalc={runCalc}
                 applyGoal={applyGoal}
+                glp1Active={glp1Active}
+                onGLP1Toggle={onGLP1ToggleChange}
               />
             </ScrollView>
           </KeyboardAvoidingView>
         </SafeAreaView>
+      </Modal>
+
+      {/* GLP-1 INFO MODAL */}
+      <Modal visible={showGLP1Modal} animationType="fade" transparent>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(42,31,46,0.55)",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: C.bg,
+              borderRadius: 24,
+              padding: 22,
+              gap: 12,
+              ...SHADOW,
+            }}
+          >
+            <Text
+              style={{
+                fontFamily: "CormorantGaramond_700Bold",
+                fontSize: 26,
+                color: C.text,
+              }}
+            >
+              Adjusting your goal for GLP-1
+            </Text>
+            <Text
+              style={{
+                fontFamily: "Jost_400Regular",
+                fontSize: 14,
+                color: C.text,
+                lineHeight: 21,
+              }}
+            >
+              Women on GLP-1 medications need more protein, not less — even as appetite drops.
+              Research shows a 15% higher target significantly reduces muscle loss during weight loss.
+            </Text>
+            <View
+              style={{
+                backgroundColor: `${C.primary}12`,
+                borderRadius: 16,
+                padding: 14,
+                alignItems: "center",
+                marginTop: 4,
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: "Jost_500Medium",
+                  fontSize: 11,
+                  color: C.muted,
+                  letterSpacing: 1,
+                }}
+              >
+                YOUR GOAL
+              </Text>
+              <Text
+                style={{
+                  fontFamily: "CormorantGaramond_700Bold",
+                  fontSize: 32,
+                  color: C.primary,
+                  marginTop: 4,
+                }}
+              >
+                {dailyGoal}g → {glp1Preview}g
+                <Text style={{ fontSize: 16, color: C.muted }}> /day</Text>
+              </Text>
+            </View>
+            <Text
+              style={{
+                fontFamily: "CormorantGaramond_400Regular_Italic",
+                fontSize: 14,
+                color: C.text,
+                lineHeight: 20,
+              }}
+            >
+              This is still very achievable — roughly one extra portion of Greek yogurt or a
+              small tin of tuna.
+            </Text>
+            <Text
+              style={{
+                fontFamily: "Jost_400Regular",
+                fontSize: 11,
+                color: C.muted,
+                lineHeight: 16,
+                marginTop: 2,
+              }}
+            >
+              Your prescribing doctor or dietitian may recommend a different target based on your
+              specific medication dose and health profile. The Goal tab lets you override this at
+              any time.
+            </Text>
+            <View style={{ gap: 10, marginTop: 8 }}>
+              <TouchableOpacity
+                testID="glp1-apply-btn"
+                onPress={applyGLP1Goal}
+                activeOpacity={0.85}
+                style={{
+                  backgroundColor: C.primary,
+                  paddingVertical: 15,
+                  borderRadius: 18,
+                  alignItems: "center",
+                }}
+              >
+                <Text
+                  style={{ color: "#fff", fontFamily: "Jost_600SemiBold", fontSize: 15 }}
+                >
+                  Apply new goal
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="glp1-cancel-btn"
+                onPress={cancelGLP1}
+                activeOpacity={0.85}
+                style={{ paddingVertical: 12, alignItems: "center" }}
+              >
+                <Text
+                  style={{ color: C.muted, fontFamily: "Jost_600SemiBold", fontSize: 14 }}
+                >
+                  Keep my current goal
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -1054,6 +1251,8 @@ function CalculatorView({
   calcResult,
   runCalc,
   applyGoal,
+  glp1Active,
+  onGLP1Toggle,
 }: any) {
   return (
     <Card>
@@ -1158,6 +1357,61 @@ function CalculatorView({
           );
         })}
       </View>
+
+      {/* GLP-1 toggle */}
+      <TouchableOpacity
+        testID="glp1-toggle"
+        activeOpacity={0.85}
+        onPress={() => onGLP1Toggle && onGLP1Toggle(!glp1Active)}
+        style={{
+          marginTop: 18,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 14,
+          padding: 16,
+          borderRadius: 18,
+          borderWidth: 1.5,
+          borderColor: glp1Active ? C.primary : C.border,
+          backgroundColor: glp1Active ? `${C.primary}10` : C.sub,
+        }}
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontFamily: "Jost_600SemiBold", color: C.text, fontSize: 14 }}>
+            I'm taking a GLP-1
+          </Text>
+          <Text
+            style={{
+              fontFamily: "CormorantGaramond_400Regular_Italic",
+              color: C.muted,
+              fontSize: 13,
+              marginTop: 2,
+            }}
+          >
+            Adjusts your goal +15% to protect lean mass
+          </Text>
+        </View>
+        {/* Switch (custom, RN Switch is fine but we keep our visual language) */}
+        <View
+          style={{
+            width: 46,
+            height: 28,
+            borderRadius: 14,
+            padding: 3,
+            backgroundColor: glp1Active ? C.primary : C.border,
+            justifyContent: "center",
+          }}
+        >
+          <View
+            style={{
+              width: 22,
+              height: 22,
+              borderRadius: 11,
+              backgroundColor: "#fff",
+              alignSelf: glp1Active ? "flex-end" : "flex-start",
+            }}
+          />
+        </View>
+      </TouchableOpacity>
 
       <View style={{ marginTop: 18 }}>
         <PrimaryButton testID="calc-submit-btn" onPress={runCalc}>
