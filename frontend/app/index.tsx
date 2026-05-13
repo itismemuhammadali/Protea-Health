@@ -2634,17 +2634,3 @@ function ContactContent() {
     </View>
   );
 }
-
-      >
-        We read everything that lands at {SUPPORT_EMAIL}.
-      </Text>
-    </View>
-  );
-}
-
-d everything that lands at {SUPPORT_EMAIL}.
-      </Text>
-    </View>
-  );
-}
-
