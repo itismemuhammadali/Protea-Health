@@ -296,7 +296,9 @@ export default function Nuura() {
   const [glp1Active, setGlp1Active] = useState(false);
   const [showGLP1Modal, setShowGLP1Modal] = useState(false);
   const GLP1_MULTIPLIER = 1.15;
-  const glp1Preview = useMemo(() => Math.round(dailyGoal * GLP1_MULTIPLIER), [dailyGoal]);
+  // Snapshot the BEFORE/AFTER numbers when the modal opens so the values
+  // don't recompute mid-Apply (which used to flash 102→117 before closing).
+  const [glp1Snapshot, setGlp1Snapshot] = useState<{ from: number; to: number }>({ from: 0, to: 0 });
 
   // "Me" tab subsheets & rate prompt
   const [meSheet, setMeSheet] = useState<null | "about" | "notif" | "privacy" | "terms" | "contact">(null);
@@ -1219,7 +1221,7 @@ export default function Nuura() {
                   marginTop: 4,
                 }}
               >
-                {dailyGoal}g → {glp1Preview}g
+                {glp1Snapshot.from || dailyGoal}g → {glp1Snapshot.to || Math.round((glp1Snapshot.from || dailyGoal) * GLP1_MULTIPLIER)}g
                 <Text style={{ fontSize: 16, color: C.muted }}> /day</Text>
               </Text>
             </View>
@@ -2343,11 +2345,19 @@ function AboutContent() {
         overlooked for too long: a nutrition tool designed from the ground up with women's
         physiology, privacy, and real lives in mind.
       </Para>
-      <Para italic>
+      <Text
+        style={{
+          fontFamily: "CormorantGaramond_700Bold",
+          fontSize: 22,
+          color: C.text,
+          lineHeight: 30,
+          marginTop: 8,
+        }}
+      >
         prōa is for the woman who wants to feel strong, not just thin. Who wants to fuel her
         body, not punish it. Who is done with apps that make healthy eating feel like homework.
         One nutrient. One goal. Every day.
-      </Para>
+      </Text>
       <Para>
         <Text style={{ fontFamily: "Jost_500Medium", color: C.muted, fontSize: 12 }}>
           prōa is not a medical app. Protein estimates are approximations and should not replace
@@ -2620,6 +2630,19 @@ function ContactContent() {
         }}
       >
         We read everything that lands at {SUPPORT_EMAIL}.
+      </Text>
+    </View>
+  );
+}
+
+      >
+        We read everything that lands at {SUPPORT_EMAIL}.
+      </Text>
+    </View>
+  );
+}
+
+d everything that lands at {SUPPORT_EMAIL}.
       </Text>
     </View>
   );
