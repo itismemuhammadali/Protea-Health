@@ -2136,7 +2136,7 @@ const styles = StyleSheet.create({
 });
 
 // ---------- "Me" tab ----------
-const SUPPORT_EMAIL = "hello@proa.app";
+const SUPPORT_EMAIL = "hello@proteā.com";
 
 function MeRow({
   emoji,
