@@ -942,7 +942,7 @@ export default function Nuura() {
 
         {/* ───── SOURCES ───── */}
         {tab === "sources" && (
-          <SourcesView entries={entries} total={total} />
+          <SourcesView entries={entries} total={total} userId={userId} dailyGoal={dailyGoal} />
         )}
 
         {/* ───── PROGRESS (week + month combined) ───── */}
@@ -1650,8 +1650,71 @@ function CalculatorView({
 }
 
 // ---------- Sources subview ----------
-function SourcesView({ entries, total }: { entries: MealEntry[]; total: number }) {
-  const breakdown = useMemo(() => {
+// ---------- Sources subview (insightful redesign) ----------
+const PROTEIN_FACTS: { title: string; body: string }[] = [
+  {
+    title: "Aim for 30g per meal",
+    body: "Muscle protein synthesis peaks around 25–30g of high-quality protein in a single sitting. Spreading intake across 3–4 meals beats one mega-meal.",
+  },
+  {
+    title: "Leucine is the trigger",
+    body: "Leucine (2–3g per meal) flips on muscle building. Find it in eggs, dairy, chicken, soy, lentils + rice.",
+  },
+  {
+    title: "Plant + plant = complete",
+    body: "Beans alone are low in methionine; rice alone is low in lysine. Together they form a complete amino-acid profile — no animal protein required.",
+  },
+  {
+    title: "Protein keeps you full",
+    body: "Gram-for-gram, protein is the most satiating macronutrient. Higher-protein breakfasts reduce cravings throughout the day.",
+  },
+  {
+    title: "Women over 40 need more",
+    body: "Sarcopenia (age-related muscle loss) starts in your 30s. Aim for 1.2–1.6g/kg if you lift, 1.6–1.8g/kg on GLP-1 meds.",
+  },
+  {
+    title: "Greek yogurt > regular",
+    body: "Greek yogurt has 2-3× the protein of regular yogurt (17g vs 5g per cup) thanks to straining. Watch the sugar though.",
+  },
+  {
+    title: "Cook smart for absorption",
+    body: "Cooking eggs raises protein bioavailability from ~50% (raw) to ~95% (cooked). Same for meat — heat denatures the protein for easier digestion.",
+  },
+  {
+    title: "Pre-bed casein",
+    body: "Casein (cottage cheese, Greek yogurt) digests slowly — a small portion before sleep fuels overnight muscle repair.",
+  },
+];
+
+function SourcesView({
+  entries,
+  total,
+  userId,
+  dailyGoal,
+}: {
+  entries: MealEntry[];
+  total: number;
+  userId: string;
+  dailyGoal: number;
+}) {
+  const [insights, setInsights] = useState<any | null>(null);
+  const [range, setRange] = useState<"week" | "month">("week");
+
+  useEffect(() => {
+    if (!userId) return;
+    const days = range === "week" ? 6 : 29;
+    const start = dateNDaysAgo(days);
+    const end = todayStr();
+    (async () => {
+      try {
+        const r = await fetch(`${API}/meals/insights?user_id=${userId}&start=${start}&end=${end}`);
+        if (r.ok) setInsights(await r.json());
+      } catch {}
+    })();
+  }, [userId, range, entries.length]);
+
+  // Today breakdown (fallback when no insights)
+  const todayBreakdown = useMemo(() => {
     const acc: Record<SourceType, number> = { animal: 0, plant: 0, supplement: 0 };
     entries.forEach((e) => {
       const src = inferSource(e.name, e.source);
@@ -1660,17 +1723,160 @@ function SourcesView({ entries, total }: { entries: MealEntry[]; total: number }
     return acc;
   }, [entries]);
 
-  const t = Math.max(total, 1);
   const sourceDefs: { key: SourceType; label: string; emoji: string; color: string }[] = [
     { key: "animal", label: "Animal", emoji: "🍗", color: C.primary },
     { key: "plant", label: "Plant", emoji: "🌱", color: C.green },
     { key: "supplement", label: "Supplements", emoji: "🥤", color: C.accent },
   ];
 
+  // Insights aggregates (weekly or monthly)
+  const breakdown: Record<SourceType, number> = insights?.by_source ?? todayBreakdown;
+  const totalRange =
+    breakdown.animal + breakdown.plant + breakdown.supplement;
+  const topDishes: { name: string; protein: number; count: number }[] =
+    insights?.top_dishes ?? [];
+  const byDowAvg: number[] = insights?.by_dow_avg ?? [];
+  const activeDays: number = insights?.active_days ?? 0;
+  const bestDay: number = insights?.best_day ?? 0;
+  const avgActive: number = insights?.avg_active ?? 0;
+
+  // Rotating protein fact based on day-of-year
+  const fact = useMemo(() => {
+    const d = new Date();
+    const dayOfYear = Math.floor(
+      (d.getTime() - new Date(d.getFullYear(), 0, 0).getTime()) / 86400000
+    );
+    return PROTEIN_FACTS[dayOfYear % PROTEIN_FACTS.length];
+  }, []);
+
+  // Generate personalized insights from the data
+  const personalInsights = useMemo(() => {
+    const out: { tone: "good" | "neutral" | "tip"; text: string }[] = [];
+    if (totalRange === 0) return out;
+    const animalPct = Math.round((breakdown.animal / totalRange) * 100);
+    const plantPct = Math.round((breakdown.plant / totalRange) * 100);
+    const supplementPct = Math.round((breakdown.supplement / totalRange) * 100);
+
+    if (plantPct >= 40) {
+      out.push({
+        tone: "good",
+        text: `${plantPct}% of your protein comes from plants — strong fiber + phytonutrient profile.`,
+      });
+    } else if (plantPct < 15 && animalPct > 70) {
+      out.push({
+        tone: "tip",
+        text: "Try one plant-protein swap a day (lentils, tofu, beans) for fiber + variety.",
+      });
+    }
+    if (supplementPct >= 30) {
+      out.push({
+        tone: "tip",
+        text: "Supplements convenient, but whole foods give amino acids + fiber + micronutrients. Aim < 25% from shakes.",
+      });
+    }
+    if (avgActive >= dailyGoal) {
+      out.push({
+        tone: "good",
+        text: `You're averaging ${avgActive}g on logged days — above your ${dailyGoal}g target.`,
+      });
+    } else if (avgActive > 0 && avgActive < dailyGoal * 0.7) {
+      const gap = dailyGoal - avgActive;
+      out.push({
+        tone: "tip",
+        text: `You're ${gap}g/day under target on average — add a Greek yogurt or hard-boiled egg between meals.`,
+      });
+    }
+    // Best day-of-week insight
+    if (byDowAvg.length === 7) {
+      const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+      const bestIdx = byDowAvg.indexOf(Math.max(...byDowAvg));
+      const worstIdx = byDowAvg.indexOf(Math.min(...byDowAvg.filter((v) => v > 0))) ;
+      if (byDowAvg[bestIdx] > 0) {
+        out.push({
+          tone: "neutral",
+          text: `${days[bestIdx]}s are your strongest day — average ${byDowAvg[bestIdx]}g.`,
+        });
+      }
+      if (worstIdx >= 0 && byDowAvg[worstIdx] > 0 && byDowAvg[worstIdx] < byDowAvg[bestIdx] * 0.6) {
+        out.push({
+          tone: "tip",
+          text: `${days[worstIdx]}s tend to dip — pre-plan a high-protein lunch.`,
+        });
+      }
+    }
+    return out.slice(0, 3);
+  }, [breakdown, byDowAvg, dailyGoal, totalRange, avgActive]);
+
+  const dayLabels = ["M", "T", "W", "T", "F", "S", "S"];
+  const dowMax = Math.max(1, ...byDowAvg);
+
   return (
     <>
+      {/* Range toggle */}
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        {(["week", "month"] as const).map((r) => (
+          <TouchableOpacity
+            key={r}
+            testID={`sources-range-${r}`}
+            activeOpacity={0.85}
+            onPress={() => setRange(r)}
+            style={{
+              flex: 1,
+              paddingVertical: 10,
+              borderRadius: 14,
+              alignItems: "center",
+              backgroundColor: range === r ? C.primary : C.surface,
+              borderWidth: 1,
+              borderColor: range === r ? C.primary : C.border,
+            }}
+          >
+            <Text
+              style={{
+                color: range === r ? "#fff" : C.muted,
+                fontFamily: "Jost_600SemiBold",
+                fontSize: 13,
+                letterSpacing: 0.6,
+                textTransform: "capitalize",
+              }}
+            >
+              Last {r === "week" ? "7 days" : "30 days"}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Headline metrics */}
+      <View style={{ flexDirection: "row", gap: 10 }}>
+        {[
+          { label: "Total", val: `${totalRange}g` },
+          { label: "Active days", val: `${activeDays}` },
+          { label: "Best day", val: `${bestDay}g` },
+        ].map((s) => (
+          <View
+            key={s.label}
+            style={{
+              flex: 1,
+              backgroundColor: C.surface,
+              borderRadius: 16,
+              padding: 12,
+              alignItems: "center",
+              borderWidth: 1,
+              borderColor: C.border,
+            }}
+          >
+            <Text style={{ fontFamily: "CormorantGaramond_700Bold", color: C.text, fontSize: 22 }}>
+              {s.val}
+            </Text>
+            <Text style={{ fontFamily: "Jost_500Medium", color: C.muted, fontSize: 11, letterSpacing: 0.6 }}>
+              {s.label}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Protein mix */}
       <Card>
-        <Text style={styles.cardTitle}>Today's protein mix</Text>
+        <Text style={styles.cardTitle}>Your protein mix</Text>
         <Text
           style={{
             fontFamily: "CormorantGaramond_400Regular_Italic",
@@ -1679,10 +1885,10 @@ function SourcesView({ entries, total }: { entries: MealEntry[]; total: number }
             marginTop: 4,
           }}
         >
-          {total > 0 ? "Where today's protein came from." : "Log a meal to see your mix."}
+          {totalRange > 0
+            ? `Where your protein came from in the last ${range === "week" ? "7" : "30"} days.`
+            : "Log meals to see your source breakdown."}
         </Text>
-
-        {/* segmented bar */}
         <View
           style={{
             height: 14,
@@ -1694,16 +1900,15 @@ function SourcesView({ entries, total }: { entries: MealEntry[]; total: number }
           }}
         >
           {sourceDefs.map((s) => {
-            const w = total > 0 ? (breakdown[s.key] / t) * 100 : 0;
+            const w = totalRange > 0 ? (breakdown[s.key] / totalRange) * 100 : 0;
             if (w <= 0) return null;
             return <View key={s.key} style={{ width: `${w}%`, backgroundColor: s.color }} />;
           })}
         </View>
-
         <View style={{ marginTop: 14, gap: 10 }}>
           {sourceDefs.map((s) => {
             const grams = breakdown[s.key];
-            const pct = total > 0 ? Math.round((grams / t) * 100) : 0;
+            const pct = totalRange > 0 ? Math.round((grams / totalRange) * 100) : 0;
             return (
               <View
                 key={s.key}
@@ -1734,7 +1939,7 @@ function SourcesView({ entries, total }: { entries: MealEntry[]; total: number }
                     {s.label}
                   </Text>
                   <Text style={{ fontFamily: "Jost_400Regular", color: C.muted, fontSize: 12 }}>
-                    {grams}g logged today
+                    {grams}g
                   </Text>
                 </View>
                 <Text
@@ -1752,8 +1957,232 @@ function SourcesView({ entries, total }: { entries: MealEntry[]; total: number }
         </View>
       </Card>
 
+      {/* Personal insights */}
+      {personalInsights.length > 0 && (
+        <Card>
+          <Text style={styles.cardTitle}>Patterns we noticed</Text>
+          <View style={{ marginTop: 12, gap: 10 }}>
+            {personalInsights.map((ins, i) => {
+              const accent =
+                ins.tone === "good" ? C.green : ins.tone === "tip" ? C.accent : C.primary;
+              const icon = ins.tone === "good" ? "✓" : ins.tone === "tip" ? "💡" : "✦";
+              return (
+                <View
+                  key={i}
+                  style={{
+                    flexDirection: "row",
+                    gap: 12,
+                    padding: 14,
+                    backgroundColor: `${accent}10`,
+                    borderRadius: 16,
+                    borderLeftWidth: 3,
+                    borderLeftColor: accent,
+                  }}
+                >
+                  <Text style={{ fontSize: 18 }}>{icon}</Text>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontFamily: "Jost_500Medium",
+                      color: C.text,
+                      fontSize: 13,
+                      lineHeight: 19,
+                    }}
+                  >
+                    {ins.text}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        </Card>
+      )}
+
+      {/* Day of week pattern */}
+      {byDowAvg.some((v) => v > 0) && (
+        <Card>
+          <Text style={styles.cardTitle}>Day-of-week pattern</Text>
+          <Text
+            style={{
+              fontFamily: "CormorantGaramond_400Regular_Italic",
+              color: C.muted,
+              fontSize: 13,
+              marginTop: 4,
+            }}
+          >
+            Average protein on each weekday.
+          </Text>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "flex-end",
+              justifyContent: "space-between",
+              marginTop: 16,
+              height: 140,
+            }}
+          >
+            {byDowAvg.map((v, i) => {
+              const h = Math.max(6, (v / dowMax) * 110);
+              const hit = v >= dailyGoal;
+              return (
+                <View key={i} style={{ alignItems: "center", flex: 1, gap: 4 }}>
+                  <Text
+                    style={{
+                      fontFamily: "Jost_500Medium",
+                      fontSize: 10,
+                      color: C.muted,
+                    }}
+                  >
+                    {v}
+                  </Text>
+                  <View
+                    style={{
+                      width: 18,
+                      height: h,
+                      borderRadius: 9,
+                      backgroundColor: hit ? C.green : C.primary,
+                      opacity: v > 0 ? 1 : 0.25,
+                    }}
+                  />
+                  <Text
+                    style={{
+                      fontFamily: "Jost_600SemiBold",
+                      color: C.muted,
+                      fontSize: 11,
+                    }}
+                  >
+                    {dayLabels[i]}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        </Card>
+      )}
+
+      {/* Top dishes */}
+      {topDishes.length > 0 && (
+        <Card>
+          <Text style={styles.cardTitle}>Your top protein meals</Text>
+          <Text
+            style={{
+              fontFamily: "CormorantGaramond_400Regular_Italic",
+              color: C.muted,
+              fontSize: 13,
+              marginTop: 4,
+            }}
+          >
+            Dishes that contributed the most protein this {range}.
+          </Text>
+          <View style={{ marginTop: 12, gap: 8 }}>
+            {topDishes.map((d, i) => {
+              const max = topDishes[0].protein || 1;
+              const w = Math.round((d.protein / max) * 100);
+              return (
+                <View key={i}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginBottom: 4,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: "Jost_600SemiBold",
+                        color: C.text,
+                        fontSize: 14,
+                        flex: 1,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {d.name}
+                      <Text style={{ color: C.muted, fontSize: 12 }}>
+                        {" "}× {d.count}
+                      </Text>
+                    </Text>
+                    <Text
+                      style={{
+                        fontFamily: "CormorantGaramond_700Bold",
+                        color: C.primary,
+                        fontSize: 18,
+                      }}
+                    >
+                      {d.protein}g
+                    </Text>
+                  </View>
+                  <View
+                    style={{
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: C.sub,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: `${w}%`,
+                        height: "100%",
+                        backgroundColor: C.primary,
+                      }}
+                    />
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </Card>
+      )}
+
+      {/* Protein fact of the day */}
+      <Card style={{ backgroundColor: `${C.primary}08`, borderColor: `${C.primary}30` }}>
+        <Text
+          style={{
+            fontFamily: "Jost_500Medium",
+            color: C.primary,
+            fontSize: 10,
+            letterSpacing: 1.4,
+          }}
+        >
+          PROTEIN FACT
+        </Text>
+        <Text
+          style={{
+            fontFamily: "CormorantGaramond_700Bold",
+            fontSize: 22,
+            color: C.text,
+            marginTop: 6,
+          }}
+        >
+          {fact.title}
+        </Text>
+        <Text
+          style={{
+            fontFamily: "Jost_400Regular",
+            color: C.text,
+            fontSize: 14,
+            lineHeight: 22,
+            marginTop: 6,
+          }}
+        >
+          {fact.body}
+        </Text>
+      </Card>
+
+      {/* Reference table */}
       <Card>
         <Text style={styles.cardTitle}>Top protein sources</Text>
+        <Text
+          style={{
+            fontFamily: "CormorantGaramond_400Regular_Italic",
+            color: C.muted,
+            fontSize: 13,
+            marginTop: 4,
+          }}
+        >
+          A quick reference for stocking the fridge.
+        </Text>
         <View style={{ marginTop: 14, gap: 10 }}>
           {FOOD_SOURCES.map((f, i) => (
             <View
@@ -1782,18 +2211,6 @@ function SourcesView({ entries, total }: { entries: MealEntry[]; total: number }
             </View>
           ))}
         </View>
-        <Text
-          style={{
-            marginTop: 16,
-            fontFamily: "CormorantGaramond_400Regular_Italic",
-            fontSize: 14,
-            color: C.muted,
-            lineHeight: 20,
-          }}
-        >
-          💡 Mix animal & plant proteins for a complete amino acid profile. Pair lentils with rice, or tofu
-          with edamame for max bioavailability.
-        </Text>
       </Card>
     </>
   );

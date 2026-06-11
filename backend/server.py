@@ -341,6 +341,88 @@ async def meals_range(user_id: str, start: str, end: str):
     return {"totals": by_day}
 
 
+@api_router.get("/meals/insights")
+async def meals_insights(user_id: str, start: str, end: str):
+    """Rich aggregate over a date range for the Sources tab."""
+    q = {"user_id": user_id, "date": {"$gte": start, "$lte": end}}
+    cur = db.meals.find(q, {"_id": 0})
+    items = await cur.to_list(20000)
+
+    by_source: dict[str, int] = {"animal": 0, "plant": 0, "supplement": 0}
+    by_day: dict[str, int] = {}
+    by_dish: dict[str, dict] = {}
+    by_dow: list[list[int]] = [[] for _ in range(7)]  # totals per day-of-week
+    by_hour: dict[int, int] = {}  # hour-of-day → total grams
+
+    for it in items:
+        protein = int(it.get("protein") or 0)
+        src = (it.get("source") or "animal").lower()
+        if src not in by_source:
+            src = "animal"
+        by_source[src] += protein
+
+        day = it.get("date") or ""
+        by_day[day] = by_day.get(day, 0) + protein
+
+        name = (it.get("name") or "Meal").strip()
+        key = name.lower()
+        if key not in by_dish:
+            by_dish[key] = {"name": name, "protein": 0, "count": 0}
+        by_dish[key]["protein"] += protein
+        by_dish[key]["count"] += 1
+
+        if day:
+            try:
+                dt = datetime.strptime(day, "%Y-%m-%d")
+                by_dow[dt.weekday()].append(by_day[day])  # not exact but okay later
+            except Exception:
+                pass
+
+        ts = it.get("timestamp")
+        if ts:
+            try:
+                hr = ts.hour if hasattr(ts, "hour") else datetime.fromisoformat(str(ts)).hour
+                by_hour[hr] = by_hour.get(hr, 0) + protein
+            except Exception:
+                pass
+
+    # Top dishes by total protein contributed
+    top_dishes = sorted(by_dish.values(), key=lambda d: d["protein"], reverse=True)[:5]
+
+    # Day-of-week mean — compute from by_day (one bucket per date) for correctness
+    dow_totals: list[list[int]] = [[] for _ in range(7)]
+    for day, p in by_day.items():
+        try:
+            dt = datetime.strptime(day, "%Y-%m-%d")
+            dow_totals[dt.weekday()].append(p)
+        except Exception:
+            pass
+    by_dow_avg = [
+        round(sum(vals) / len(vals)) if vals else 0 for vals in dow_totals
+    ]
+
+    # Headline metrics
+    active_days = len(by_day)
+    total = sum(by_day.values())
+    best_day = max(by_day.values()) if by_day else 0
+    avg_active = round(total / active_days) if active_days else 0
+
+    # Hour-of-day peak
+    peak_hour = max(by_hour, key=by_hour.get) if by_hour else None
+
+    return {
+        "by_source": by_source,
+        "top_dishes": top_dishes,
+        "by_dow_avg": by_dow_avg,
+        "active_days": active_days,
+        "total_protein": total,
+        "best_day": best_day,
+        "avg_active": avg_active,
+        "peak_hour": peak_hour,
+    }
+    return {"totals": by_day}
+
+
 @api_router.delete("/meals/{meal_id}")
 async def delete_meal(meal_id: str, user_id: str):
     res = await db.meals.delete_one({"id": meal_id, "user_id": user_id})
