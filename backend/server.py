@@ -224,32 +224,26 @@ async def analyze_food(req: AnalyzeRequest):
         raise HTTPException(status_code=400, detail="imageBase64 is required")
 
     system_msg = (
-        "You are a careful nutrition vision expert. Be CONSERVATIVE and CONSISTENT — "
-        "the same dish must produce the same protein estimate regardless of camera "
-        "angle, lighting, or how much of the dish happens to be in frame. Identify the "
-        "DISH first, then estimate its TOTAL portion as served, not just the fraction "
-        "visible at this angle. Overestimating protein is worse than underestimating.\n\n"
-        "STEP 0 — Identify the dish (e.g. 'beef & bean chili', 'chicken rice bowl'). "
-        "If a second photo of the SAME container is taken from another angle, the "
-        "protein content is IDENTICAL — only framing changes.\n\n"
-        "STEP 1 — Estimate the TOTAL portion mass in grams the container holds, using "
-        "container dimensions: a standard meal-prep glass container holds 600-750g of "
-        "cooked food; a dinner plate of food is 400-500g; a soup/chili bowl is 300-400g. "
-        "If a packaging weight is visible on a label (e.g. '75g bag'), trust THAT.\n\n"
-        "STEP 2 — Apply realistic protein percentages (per 100g): chicken/turkey 25-31g, "
-        "beef/pork 20-26g, salmon/tuna 22-25g, white fish 18-22g, eggs 12g, hard cheese "
-        "20-25g, cottage cheese 11g, Greek yogurt 10g, regular yogurt 3-4g, tofu 8g, "
-        "lentils/beans cooked 8-9g, edamame 11g, rice cooked 2.5g, pasta cooked 5g, "
-        "bread 8-9g, nuts 15-25g, chips/crackers 6-8g, fruit 1g, leafy veg 2-3g, "
-        "whey/protein bar 20-25g per scoop/bar. For mixed dishes use the WEIGHTED "
-        "average: beef-and-bean chili ≈ 7-9g/100g, chicken curry ≈ 10-13g/100g, pasta "
-        "with meat sauce ≈ 7-9g/100g, veggie stew ≈ 3-5g/100g.\n\n"
-        "STEP 3 — protein_g = portion_mass_g × (avg_protein_per_100g / 100). Round the "
-        "FINAL number to the nearest 5 grams. If unsure between two values, pick the "
-        "LOWER one. A normal single plate rarely exceeds 50g protein.\n\n"
+        "You estimate the grams of protein in a food photo, the same way a careful "
+        "dietitian would when asked 'how many grams of protein is in this?'. "
+        "Look at WHAT IS VISIBLE in the photo — if the container is partially eaten, "
+        "estimate only the remaining food, not what was originally served. Use everyday "
+        "portion benchmarks (a chicken breast ≈ 150–200g, an egg ≈ 50g, a slice of "
+        "bread ≈ 30g, ¼ cup shredded cheese ≈ 28g, ½ avocado ≈ 100g). For mixed dishes "
+        "like chili or curry, estimate the visible portion volume in cups, then apply "
+        "typical protein per cup (beef-and-bean chili ≈ 15–20g per cup, vegetarian "
+        "chili ≈ 10–14g per cup, chicken curry ≈ 20–25g per cup, pasta with meat sauce "
+        "≈ 15g per cup, soup/stew vegetarian ≈ 4–7g per cup).\n\n"
+        "Identify the dish by name — the SAME dish photographed from different angles "
+        "must produce the SAME estimate. Be honest: a half-eaten meal has less protein "
+        "than a full one.\n\n"
+        "When you have a range in mind (e.g. 17–24g), pick the MIDPOINT and round to "
+        "the nearest 5 grams. If you can't tell whether a dish contains meat, assume it "
+        "does only if you see clear visual evidence (browned ground meat, chicken "
+        "chunks, etc.).\n\n"
         "Return ONLY one compact flat JSON object (no markdown, no prose). Schema:\n"
-        '{"name": short stable label max 4 words (same dish ⇒ same name), '
-        '"protein": integer grams rounded to nearest 5 (0-500), '
+        '{"name": short stable dish label, max 4 words, '
+        '"protein": integer grams rounded to nearest 5 (0-200), '
         '"note": one short friendly sentence max 12 words, '
         '"source": one of "animal" | "plant" | "supplement".}'
     )
@@ -263,12 +257,9 @@ async def analyze_food(req: AnalyzeRequest):
     image = ImageContent(image_base64=req.imageBase64)
     user_msg = UserMessage(
         text=(
-            "Identify every protein-contributing item on the plate. For each, estimate "
-            "the portion mass in grams using visual cues (plate size, depth, container "
-            "labels). Then apply realistic protein-per-100g values. SUM across items. "
-            "Be conservative — when in doubt, pick the lower estimate. If you can see a "
-            "packaging weight (e.g. '75g bag'), use exactly that mass. Reply with strict "
-            "JSON only, matching the schema in the system message."
+            "How many grams of protein in this? Identify the dish, estimate the visible "
+            "portion as if you were asked by a careful dietitian, and reply with strict "
+            "JSON only matching the schema in the system message."
         ),
         file_contents=[image],
     )
