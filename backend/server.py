@@ -224,29 +224,34 @@ async def analyze_food(req: AnalyzeRequest):
         raise HTTPException(status_code=400, detail="imageBase64 is required")
 
     system_msg = (
-        "You are a careful nutrition vision expert. Be CONSERVATIVE — overestimating "
-        "protein is worse than underestimating. Use realistic portion sizes and the "
-        "approximate protein concentrations below; never round portions up.\n\n"
-        "STEP 1 — Estimate portion mass in grams using visual cues for depth, plate "
-        "diameter (a standard dinner plate is 25-28 cm), bowl/cup volume, container "
-        "labels if visible (a 75g bag is 75g, not 150g), serving-size benchmarks "
-        "(1 deck of cards ≈ 85g of meat, 1 cupped hand ≈ 30g of nuts/chips, a chicken "
-        "breast ≈ 150-200g, an egg ≈ 50g, a slice of bread ≈ 30g, 1 cup of yogurt ≈ "
-        "240g). If you can see a packaging weight/serving on the label, trust THAT.\n\n"
+        "You are a careful nutrition vision expert. Be CONSERVATIVE and CONSISTENT — "
+        "the same dish must produce the same protein estimate regardless of camera "
+        "angle, lighting, or how much of the dish happens to be in frame. Identify the "
+        "DISH first, then estimate its TOTAL portion as served, not just the fraction "
+        "visible at this angle. Overestimating protein is worse than underestimating.\n\n"
+        "STEP 0 — Identify the dish (e.g. 'beef & bean chili', 'chicken rice bowl'). "
+        "If a second photo of the SAME container is taken from another angle, the "
+        "protein content is IDENTICAL — only framing changes.\n\n"
+        "STEP 1 — Estimate the TOTAL portion mass in grams the container holds, using "
+        "container dimensions: a standard meal-prep glass container holds 600-750g of "
+        "cooked food; a dinner plate of food is 400-500g; a soup/chili bowl is 300-400g. "
+        "If a packaging weight is visible on a label (e.g. '75g bag'), trust THAT.\n\n"
         "STEP 2 — Apply realistic protein percentages (per 100g): chicken/turkey 25-31g, "
         "beef/pork 20-26g, salmon/tuna 22-25g, white fish 18-22g, eggs 12g, hard cheese "
         "20-25g, cottage cheese 11g, Greek yogurt 10g, regular yogurt 3-4g, tofu 8g, "
         "lentils/beans cooked 8-9g, edamame 11g, rice cooked 2.5g, pasta cooked 5g, "
-        "bread 8-9g, nuts 15-25g, potato chips/crackers 6-8g, fruit 1g, leafy veg 2-3g, "
-        "whey/protein bar varies (read label or use 20-25g per scoop/bar).\n\n"
-        "STEP 3 — Multiply: protein_g = portion_mass_g × (protein_per_100g / 100). "
-        "SUM across all visible components for mixed meals. Sanity-check the total — "
-        "if it exceeds 60g for a normal-looking single plate, reconsider.\n\n"
+        "bread 8-9g, nuts 15-25g, chips/crackers 6-8g, fruit 1g, leafy veg 2-3g, "
+        "whey/protein bar 20-25g per scoop/bar. For mixed dishes use the WEIGHTED "
+        "average: beef-and-bean chili ≈ 7-9g/100g, chicken curry ≈ 10-13g/100g, pasta "
+        "with meat sauce ≈ 7-9g/100g, veggie stew ≈ 3-5g/100g.\n\n"
+        "STEP 3 — protein_g = portion_mass_g × (avg_protein_per_100g / 100). Round the "
+        "FINAL number to the nearest 5 grams. If unsure between two values, pick the "
+        "LOWER one. A normal single plate rarely exceeds 50g protein.\n\n"
         "Return ONLY one compact flat JSON object (no markdown, no prose). Schema:\n"
-        '{"name": short label max 4 words, '
-        '"protein": integer grams for the ENTIRE visible portion (0-500), '
+        '{"name": short stable label max 4 words (same dish ⇒ same name), '
+        '"protein": integer grams rounded to nearest 5 (0-500), '
         '"note": one short friendly sentence max 12 words, '
-        '"source": one of "animal" | "plant" | "supplement" — pick the dominant source.}'
+        '"source": one of "animal" | "plant" | "supplement".}'
     )
 
     chat = LlmChat(
@@ -278,7 +283,8 @@ async def analyze_food(req: AnalyzeRequest):
         data = extract_json(str(raw))
         name, protein, note, source = coerce_analyze_fields(data)
         name = (name or "Meal")[:80]
-        protein = max(0, min(protein, 500))
+        # Round final protein to nearest 5g for visual stability across angles
+        protein = max(0, min(int(round(protein / 5.0) * 5), 500))
         note = note[:140]
         if source not in ("animal", "plant", "supplement"):
             source = "animal"
