@@ -1698,11 +1698,11 @@ function SourcesView({
   dailyGoal: number;
 }) {
   const [insights, setInsights] = useState<any | null>(null);
-  const [range, setRange] = useState<"week" | "month">("week");
+  const [range, setRange] = useState<"day" | "week" | "month">("day");
 
   useEffect(() => {
     if (!userId) return;
-    const days = range === "week" ? 6 : 29;
+    const days = range === "day" ? 0 : range === "week" ? 6 : 29;
     const start = dateNDaysAgo(days);
     const end = todayStr();
     (async () => {
@@ -1814,7 +1814,7 @@ function SourcesView({
     <>
       {/* Range toggle */}
       <View style={{ flexDirection: "row", gap: 8 }}>
-        {(["week", "month"] as const).map((r) => (
+        {(["day", "week", "month"] as const).map((r) => (
           <TouchableOpacity
             key={r}
             testID={`sources-range-${r}`}
@@ -1836,41 +1836,11 @@ function SourcesView({
                 fontFamily: "Jost_600SemiBold",
                 fontSize: 13,
                 letterSpacing: 0.6,
-                textTransform: "capitalize",
               }}
             >
-              Last {r === "week" ? "7 days" : "30 days"}
+              {r === "day" ? "Today" : r === "week" ? "Last 7 days" : "Last 30 days"}
             </Text>
           </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* Headline metrics */}
-      <View style={{ flexDirection: "row", gap: 10 }}>
-        {[
-          { label: "Total", val: `${totalRange}g` },
-          { label: "Active days", val: `${activeDays}` },
-          { label: "Best day", val: `${bestDay}g` },
-        ].map((s) => (
-          <View
-            key={s.label}
-            style={{
-              flex: 1,
-              backgroundColor: C.surface,
-              borderRadius: 16,
-              padding: 12,
-              alignItems: "center",
-              borderWidth: 1,
-              borderColor: C.border,
-            }}
-          >
-            <Text style={{ fontFamily: "CormorantGaramond_700Bold", color: C.text, fontSize: 22 }}>
-              {s.val}
-            </Text>
-            <Text style={{ fontFamily: "Jost_500Medium", color: C.muted, fontSize: 11, letterSpacing: 0.6 }}>
-              {s.label}
-            </Text>
-          </View>
         ))}
       </View>
 
@@ -1886,7 +1856,9 @@ function SourcesView({
           }}
         >
           {totalRange > 0
-            ? `Where your protein came from in the last ${range === "week" ? "7" : "30"} days.`
+            ? `Where your protein came from ${
+                range === "day" ? "today" : `in the last ${range === "week" ? "7" : "30"} days`
+              }.`
             : "Log meals to see your source breakdown."}
         </Text>
         <View
@@ -1956,47 +1928,6 @@ function SourcesView({
           })}
         </View>
       </Card>
-
-      {/* Personal insights */}
-      {personalInsights.length > 0 && (
-        <Card>
-          <Text style={styles.cardTitle}>Patterns we noticed</Text>
-          <View style={{ marginTop: 12, gap: 10 }}>
-            {personalInsights.map((ins, i) => {
-              const accent =
-                ins.tone === "good" ? C.green : ins.tone === "tip" ? C.accent : C.primary;
-              const icon = ins.tone === "good" ? "✓" : ins.tone === "tip" ? "💡" : "✦";
-              return (
-                <View
-                  key={i}
-                  style={{
-                    flexDirection: "row",
-                    gap: 12,
-                    padding: 14,
-                    backgroundColor: `${accent}10`,
-                    borderRadius: 16,
-                    borderLeftWidth: 3,
-                    borderLeftColor: accent,
-                  }}
-                >
-                  <Text style={{ fontSize: 18 }}>{icon}</Text>
-                  <Text
-                    style={{
-                      flex: 1,
-                      fontFamily: "Jost_500Medium",
-                      color: C.text,
-                      fontSize: 13,
-                      lineHeight: 19,
-                    }}
-                  >
-                    {ins.text}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
-        </Card>
-      )}
 
       {/* Day of week pattern */}
       {byDowAvg.some((v) => v > 0) && (
