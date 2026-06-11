@@ -36,8 +36,8 @@ import {
 } from "@expo-google-fonts/jost";
 
 // ---------- Config ----------
-const APP_NAME = "prōa";
-const APP_TAGLINE = "protein, personalized for you";
+const APP_NAME = "proteā";
+const APP_TAGLINE = "protein, made personal";
 const BACKEND = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const API = `${BACKEND}/api`;
 
@@ -574,7 +574,7 @@ export default function Nuura() {
   const pickFromLibrary = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert("Photos permission needed", "Please allow nuura to access your photos.");
+      Alert.alert("Photos permission needed", "Please allow proteā to access your photos.");
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -1331,7 +1331,7 @@ export default function Nuura() {
                 marginRight: 28,
               }}
             >
-              {meSheet === "about" ? "About prōa" :
+              {meSheet === "about" ? "About proteā" :
                 meSheet === "notif" ? "Notifications" :
                 meSheet === "privacy" ? "Privacy policy" :
                 meSheet === "terms" ? "Terms & conditions" :
@@ -1394,7 +1394,7 @@ export default function Nuura() {
                 textAlign: "center",
               }}
             >
-              Enjoying prōa?
+              Enjoying proteā?
             </Text>
             <Text
               style={{
@@ -1432,7 +1432,7 @@ export default function Nuura() {
               }}
             >
               <Text style={{ color: "#fff", fontFamily: "Jost_600SemiBold", fontSize: 14 }}>
-                Rate prōa on the App Store
+                Rate proteā on the App Store
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -2230,7 +2230,7 @@ function MeView({
             marginTop: 10,
           }}
         >
-          your prōa
+          your proteā
         </Text>
         <Text
           style={{
@@ -2246,7 +2246,7 @@ function MeView({
       <MeRow
         testID="me-about"
         emoji="✦"
-        title="About prōa"
+        title="About proteā"
         subtitle="The story behind the app"
         onPress={() => onOpen("about")}
       />
@@ -2275,7 +2275,7 @@ function MeView({
         testID="me-rate"
         emoji="★"
         title="Rate the app"
-        subtitle="Help other women find prōa"
+        subtitle="Help other women find proteā"
         onPress={onRate}
       />
       <MeRow
@@ -2309,19 +2309,19 @@ function AboutContent() {
   );
   return (
     <View style={{ gap: 10 }}>
-      <Para head>prōa means first in Greek.</Para>
+      <Para head>proteā means first in Greek.</Para>
       <Para italic>
         It's what protein is — your first nutrient, your most essential fuel, the one thing that
         changes everything when women finally get enough of it.
       </Para>
       <Para>
         Most nutrition apps were built for men, optimized for bodybuilders, or designed to make
-        you obsessed with every calorie. prōa is different. We track one thing — protein — because
+        you obsessed with every calorie. proteā is different. We track one thing — protein — because
         for women, it's the single most impactful nutritional change you can make. Protein builds
         and preserves muscle. It keeps you full, supports your hormones, stabilizes your energy,
         and becomes even more critical as you age. Most women eat far less than they need — not
         because they don't care, but because no one ever told them clearly how much to aim for,
-        or made it easy to track. prōa fixes that.
+        or made it easy to track. proteā fixes that.
       </Para>
       <Para head>The GLP-1 generation needs protein more than ever.</Para>
       <Para>
@@ -2329,7 +2329,7 @@ function AboutContent() {
         When appetite is suppressed, total food intake drops — and with it, the risk of losing not
         just fat but vital muscle mass. Researchers and clinicians now agree — women on GLP-1
         medications need to be deliberate and consistent about hitting their protein targets every
-        single day to protect the muscle they have worked so hard to build. prōa was designed for
+        single day to protect the muscle they have worked so hard to build. proteā was designed for
         exactly this. When you're eating less, every gram counts.
       </Para>
       <Para head>Snap a meal.</Para>
@@ -2339,7 +2339,7 @@ function AboutContent() {
       </Para>
       <Para head>Set a goal that's actually yours.</Para>
       <Para>
-        prōa calculates your daily protein target based on your weight, age, and goals — using
+        proteā calculates your daily protein target based on your weight, age, and goals — using
         the same science sports nutritionists use, adjusted specifically for women. If you're
         over 50 or taking a GLP-1 medication, your target is higher, not lower. We're one of
         the very few apps that adjusts for this.
@@ -2355,7 +2355,7 @@ function AboutContent() {
       </Para>
       <Para head>Built by women who understand the science.</Para>
       <Para>
-        prōa was created by a Harvard PhD with experience in the pharmaceutical and wellness
+        proteā was created by a Harvard PhD with experience in the pharmaceutical and wellness
         sectors as well as an MIT computer science grad — bringing together rigorous technical
         expertise and deep academic research to build something the wellness industry has
         overlooked for too long: a nutrition tool designed from the ground up with women's
@@ -2370,13 +2370,13 @@ function AboutContent() {
           marginTop: 6,
         }}
       >
-        prōa is for the woman who wants to feel strong, not just thin. Who wants to fuel her
+        proteā is for the woman who wants to feel strong, not just thin. Who wants to fuel her
         body, not punish it. Who is done with apps that make healthy eating feel like homework.
         One nutrient. One goal. Every day.
       </Text>
       <Para>
         <Text style={{ fontFamily: "Jost_500Medium", color: C.muted, fontSize: 12 }}>
-          prōa is not a medical app. Protein estimates are approximations and should not replace
+          proteā is not a medical app. Protein estimates are approximations and should not replace
           advice from a qualified healthcare professional or registered dietitian.
         </Text>
       </Para>
@@ -2572,7 +2572,7 @@ function PrivacyContent() {
       </PolicyText>
       <PolicyText>
         We use Google's Gemini vision model to analyze your food photos. Photos are sent over
-        encrypted HTTPS, processed in-flight, and discarded — they are never persisted by prōa
+        encrypted HTTPS, processed in-flight, and discarded — they are never persisted by proteā
         or used to train models.
       </PolicyText>
     </View>
@@ -2586,13 +2586,13 @@ function TermsContent() {
         Terms & conditions
       </Text>
       <PolicyText>
-        prōa is provided "as is" for informational and self-tracking purposes only. By using
-        prōa you agree that protein estimates are approximations based on AI vision and visible
+        proteā is provided "as is" for informational and self-tracking purposes only. By using
+        proteā you agree that protein estimates are approximations based on AI vision and visible
         portion size — they are not a substitute for advice from a qualified healthcare
         professional or registered dietitian.
       </PolicyText>
       <PolicyText>
-        prōa is not a medical device. Do not rely on prōa for medical decisions, including those
+        proteā is not a medical device. Do not rely on proteā for medical decisions, including those
         relating to weight loss medications, eating disorders, pregnancy, or chronic illness.
         Always consult your physician or dietitian for personal nutrition guidance.
       </PolicyText>
@@ -2601,7 +2601,7 @@ function TermsContent() {
         infringe someone else's privacy or rights.
       </PolicyText>
       <PolicyText>
-        We may update these terms as the product evolves; continued use of prōa constitutes
+        We may update these terms as the product evolves; continued use of proteā constitutes
         acceptance of the latest version.
       </PolicyText>
     </View>
@@ -2620,21 +2620,21 @@ function ContactContent() {
         emoji="✍️"
         title="Send feedback"
         subtitle="Tell us what you love or what could be better"
-        onPress={() => open("prōa Feedback", "App version: 1.0.0\n\n")}
+        onPress={() => open("proteā Feedback", "App version: 1.0.0\n\n")}
       />
       <MeRow
         testID="contact-bug"
         emoji="⚠️"
         title="Report a bug"
         subtitle="Something not working right? Let us know"
-        onPress={() => open("prōa Bug Report", "Describe what happened:\n\n")}
+        onPress={() => open("proteā Bug Report", "Describe what happened:\n\n")}
       />
       <MeRow
         testID="contact-feature"
         emoji="💡"
         title="Request a feature"
-        subtitle="Have an idea for prōa? We want to hear it"
-        onPress={() => open("prōa Feature Request", "My idea:\n\n")}
+        subtitle="Have an idea for proteā? We want to hear it"
+        onPress={() => open("proteā Feature Request", "My idea:\n\n")}
       />
       <Text
         style={{
