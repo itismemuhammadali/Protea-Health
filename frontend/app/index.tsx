@@ -1878,54 +1878,70 @@ function SourcesView({
           })}
         </View>
         <View style={{ marginTop: 14, gap: 10 }}>
-          {sourceDefs.map((s) => {
-            const grams = breakdown[s.key];
-            const pct = totalRange > 0 ? Math.round((grams / totalRange) * 100) : 0;
-            return (
-              <View
-                key={s.key}
-                testID={`source-row-${s.key}`}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 12,
-                  backgroundColor: C.sub,
-                  padding: 14,
-                  borderRadius: 16,
-                }}
-              >
+          {(() => {
+            // Largest-remainder method so the three percentages always sum to 100
+            const vals = sourceDefs.map((s) => breakdown[s.key]);
+            const sum = vals.reduce((a, b) => a + b, 0);
+            let pcts = vals.map(() => 0);
+            if (sum > 0) {
+              const raw = vals.map((v) => (v / sum) * 100);
+              const floors = raw.map((r) => Math.floor(r));
+              let remainder = 100 - floors.reduce((a, b) => a + b, 0);
+              const fracs = raw
+                .map((r, i) => ({ i, frac: r - Math.floor(r) }))
+                .sort((a, b) => b.frac - a.frac);
+              pcts = floors.slice();
+              for (let k = 0; k < remainder; k++) pcts[fracs[k].i] += 1;
+            }
+            return sourceDefs.map((s, idx) => {
+              const grams = breakdown[s.key];
+              const pct = pcts[idx];
+              return (
                 <View
+                  key={s.key}
+                  testID={`source-row-${s.key}`}
                   style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 12,
-                    backgroundColor: `${s.color}25`,
+                    flexDirection: "row",
                     alignItems: "center",
-                    justifyContent: "center",
+                    gap: 12,
+                    backgroundColor: C.sub,
+                    padding: 14,
+                    borderRadius: 16,
                   }}
                 >
-                  <Text style={{ fontSize: 20 }}>{s.emoji}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: "Jost_600SemiBold", color: C.text, fontSize: 15 }}>
-                    {s.label}
+                  <View
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 12,
+                      backgroundColor: `${s.color}25`,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Text style={{ fontSize: 20 }}>{s.emoji}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: "Jost_600SemiBold", color: C.text, fontSize: 15 }}>
+                      {s.label}
+                    </Text>
+                    <Text style={{ fontFamily: "Jost_400Regular", color: C.muted, fontSize: 12 }}>
+                      {grams}g
+                    </Text>
+                  </View>
+                  <Text
+                    style={{
+                      fontFamily: "CormorantGaramond_700Bold",
+                      color: s.color,
+                      fontSize: 24,
+                    }}
+                  >
+                    {pct}%
                   </Text>
-                  <Text style={{ fontFamily: "Jost_400Regular", color: C.muted, fontSize: 12 }}>
-                    {grams}g
-                  </Text>
                 </View>
-                <Text
-                  style={{
-                    fontFamily: "CormorantGaramond_700Bold",
-                    color: s.color,
-                    fontSize: 24,
-                  }}
-                >
-                  {pct}%
-                </Text>
-              </View>
-            );
-          })}
+              );
+            });
+          })()}
         </View>
       </Card>
 
