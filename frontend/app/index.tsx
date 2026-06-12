@@ -1945,8 +1945,8 @@ function SourcesView({
         </View>
       </Card>
 
-      {/* Day of week pattern */}
-      {byDowAvg.some((v) => v > 0) && (
+      {/* Day of week pattern (intentionally removed per request) */}
+      {false && byDowAvg.some((v) => v > 0) && (
         <Card>
           <Text style={styles.cardTitle}>Day-of-week pattern</Text>
           <Text
@@ -2010,7 +2010,7 @@ function SourcesView({
       {/* Top dishes */}
       {topDishes.length > 0 && (
         <Card>
-          <Text style={styles.cardTitle}>Your top protein meals</Text>
+          <Text style={styles.cardTitle}>Your 3 top protein meals</Text>
           <Text
             style={{
               fontFamily: "CormorantGaramond_400Regular_Italic",
@@ -2019,10 +2019,10 @@ function SourcesView({
               marginTop: 4,
             }}
           >
-            Dishes that contributed the most protein this {range}.
+            Dishes that contributed the most protein this {range === "day" ? "day" : range}.
           </Text>
           <View style={{ marginTop: 12, gap: 8 }}>
-            {topDishes.map((d, i) => {
+            {topDishes.slice(0, 3).map((d, i) => {
               const max = topDishes[0].protein || 1;
               const w = Math.round((d.protein / max) * 100);
               return (
