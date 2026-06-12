@@ -1,15 +1,19 @@
 import os
+import time
 import uuid
 import json
 import logging
 import re
+from collections import deque
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel, Field, field_validator
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 
@@ -25,8 +29,36 @@ EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
-app = FastAPI()
+app = FastAPI(
+    title="proteā API",
+    version="1.0.0",
+    # Hide internal docs in production to reduce attack surface enumeration
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 api_router = APIRouter(prefix="/api")
+
+# ---------- Security limits ----------
+MAX_BODY_BYTES = 8 * 1024 * 1024  # 8 MB cap for any request (food images are smaller)
+USER_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{3,80}$")
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def safe_user_id(uid: Optional[str]) -> str:
+    """Validate user_id format; reject anything that looks like injection."""
+    if not uid or not USER_ID_RE.match(uid):
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+    return uid
+
+
+def safe_date(d: Optional[str]) -> Optional[str]:
+    if d is None:
+        return None
+    if not DATE_RE.match(d):
+        raise HTTPException(status_code=400, detail="Invalid date format (YYYY-MM-DD)")
+    return d
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("nuura")
@@ -36,6 +68,31 @@ logger = logging.getLogger("nuura")
 class AnalyzeRequest(BaseModel):
     imageBase64: str
     user_id: Optional[str] = None
+
+    @field_validator("imageBase64")
+    @classmethod
+    def _check_image_size(cls, v: str) -> str:
+        if not v:
+            raise ValueError("imageBase64 is required")
+        # Base64 is 4/3 the byte size — cap at ~6 MB raw to keep payloads small
+        if len(v) > 8 * 1024 * 1024:
+            raise ValueError("Image too large (max ~6 MB)")
+        # Strip data: URI prefix if present
+        if v.startswith("data:"):
+            v = v.split(",", 1)[-1]
+        # Validate the alphabet — guard against arbitrary garbage
+        if not re.fullmatch(r"[A-Za-z0-9+/=\n\r]+", v):
+            raise ValueError("Invalid base64 content")
+        return v
+
+    @field_validator("user_id")
+    @classmethod
+    def _check_uid(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if not USER_ID_RE.match(v):
+            raise ValueError("Invalid user_id format")
+        return v
 
 
 class AnalyzeResponse(BaseModel):
@@ -58,11 +115,32 @@ class Profile(BaseModel):
 
 class ProfileUpsert(BaseModel):
     user_id: str
-    weight: float
+    weight: float = Field(ge=0, le=1000)
     unit: str
-    age: int
+    age: int = Field(ge=0, le=130)
     fitnessGoal: str
-    dailyGoal: int
+    dailyGoal: int = Field(ge=0, le=1000)
+
+    @field_validator("user_id")
+    @classmethod
+    def _uid(cls, v: str) -> str:
+        if not USER_ID_RE.match(v):
+            raise ValueError("Invalid user_id")
+        return v
+
+    @field_validator("unit")
+    @classmethod
+    def _unit(cls, v: str) -> str:
+        if v not in ("lbs", "kg"):
+            raise ValueError("unit must be lbs or kg")
+        return v
+
+    @field_validator("fitnessGoal")
+    @classmethod
+    def _goal(cls, v: str) -> str:
+        if v not in ("maintain", "lose", "build", "active"):
+            raise ValueError("invalid fitnessGoal")
+        return v
 
 
 class Meal(BaseModel):
@@ -81,21 +159,49 @@ class Meal(BaseModel):
 
 class MealCreate(BaseModel):
     user_id: str
-    name: str
-    protein: int
-    emoji: str
-    note: Optional[str] = ""
-    imageUrl: Optional[str] = ""
-    time: str
+    name: str = Field(min_length=1, max_length=80)
+    protein: int = Field(ge=0, le=500)
+    emoji: str = Field(max_length=8)
+    note: Optional[str] = Field(default="", max_length=140)
+    imageUrl: Optional[str] = Field(default="", max_length=2048)
+    time: str = Field(max_length=10)
     date: str
     source: str = "animal"
+
+    @field_validator("user_id")
+    @classmethod
+    def _uid(cls, v: str) -> str:
+        if not USER_ID_RE.match(v):
+            raise ValueError("Invalid user_id")
+        return v
+
+    @field_validator("date")
+    @classmethod
+    def _date(cls, v: str) -> str:
+        if not DATE_RE.match(v):
+            raise ValueError("Invalid date")
+        return v
+
+    @field_validator("source")
+    @classmethod
+    def _src(cls, v: str) -> str:
+        if v not in ("animal", "plant", "supplement"):
+            raise ValueError("invalid source")
+        return v
 
 
 class MealPatch(BaseModel):
     user_id: str
-    name: Optional[str] = None
-    protein: Optional[int] = None
+    name: Optional[str] = Field(default=None, max_length=80)
+    protein: Optional[int] = Field(default=None, ge=0, le=500)
     source: Optional[str] = None
+
+    @field_validator("user_id")
+    @classmethod
+    def _uid(cls, v: str) -> str:
+        if not USER_ID_RE.match(v):
+            raise ValueError("Invalid user_id")
+        return v
 
 
 # ---------- Helpers ----------
@@ -213,7 +319,7 @@ def coerce_analyze_fields(data: dict) -> tuple[str, int, str, str]:
 # ---------- Routes ----------
 @api_router.get("/")
 async def root():
-    return {"app": "proa", "ok": True}
+    return {"app": "protea", "ok": True}
 
 
 @api_router.post("/analyze", response_model=AnalyzeResponse)
@@ -266,9 +372,10 @@ async def analyze_food(req: AnalyzeRequest):
 
     try:
         raw = await chat.send_message(user_msg)
-    except Exception as e:
+    except Exception:
         logger.exception("LLM error")
-        raise HTTPException(status_code=502, detail=f"LLM error: {e}")
+        # Don't leak provider details — generic error to the client
+        raise HTTPException(status_code=502, detail="Vision service temporarily unavailable")
 
     try:
         data = extract_json(str(raw))
@@ -305,6 +412,7 @@ async def upsert_profile(p: ProfileUpsert):
 
 @api_router.get("/profile/{user_id}", response_model=Optional[Profile])
 async def get_profile(user_id: str):
+    user_id = safe_user_id(user_id)
     doc = await db.profiles.find_one({"user_id": user_id}, {"_id": 0})
     if not doc:
         return None
@@ -321,7 +429,9 @@ async def create_meal(m: MealCreate):
 
 @api_router.get("/meals", response_model=List[Meal])
 async def list_meals(user_id: str, date: Optional[str] = None):
-    q = {"user_id": user_id}
+    user_id = safe_user_id(user_id)
+    date = safe_date(date)
+    q: dict = {"user_id": user_id}
     if date:
         q["date"] = date
     cur = db.meals.find(q, {"_id": 0}).sort("timestamp", -1)
@@ -332,6 +442,11 @@ async def list_meals(user_id: str, date: Optional[str] = None):
 @api_router.get("/meals/range")
 async def meals_range(user_id: str, start: str, end: str):
     """Return aggregated daily protein totals from start to end (YYYY-MM-DD inclusive)."""
+    user_id = safe_user_id(user_id)
+    start = safe_date(start) or start
+    end = safe_date(end) or end
+    if not (DATE_RE.match(start) and DATE_RE.match(end)):
+        raise HTTPException(status_code=400, detail="Invalid date format")
     q = {"user_id": user_id, "date": {"$gte": start, "$lte": end}}
     cur = db.meals.find(q, {"_id": 0})
     items = await cur.to_list(10000)
@@ -344,6 +459,11 @@ async def meals_range(user_id: str, start: str, end: str):
 @api_router.get("/meals/insights")
 async def meals_insights(user_id: str, start: str, end: str):
     """Rich aggregate over a date range for the Sources tab."""
+    user_id = safe_user_id(user_id)
+    start = safe_date(start) or start
+    end = safe_date(end) or end
+    if not (DATE_RE.match(start) and DATE_RE.match(end)):
+        raise HTTPException(status_code=400, detail="Invalid date format")
     q = {"user_id": user_id, "date": {"$gte": start, "$lte": end}}
     cur = db.meals.find(q, {"_id": 0})
     items = await cur.to_list(20000)
@@ -425,12 +545,17 @@ async def meals_insights(user_id: str, start: str, end: str):
 
 @api_router.delete("/meals/{meal_id}")
 async def delete_meal(meal_id: str, user_id: str):
+    user_id = safe_user_id(user_id)
+    if not re.fullmatch(r"[A-Za-z0-9\-]{8,64}", meal_id):
+        raise HTTPException(status_code=400, detail="Invalid meal id")
     res = await db.meals.delete_one({"id": meal_id, "user_id": user_id})
     return {"deleted": res.deleted_count}
 
 
 @api_router.patch("/meals/{meal_id}", response_model=Optional[Meal])
 async def patch_meal(meal_id: str, p: MealPatch):
+    if not re.fullmatch(r"[A-Za-z0-9\-]{8,64}", meal_id):
+        raise HTTPException(status_code=400, detail="Invalid meal id")
     update: dict = {}
     if p.name is not None:
         update["name"] = p.name[:80]
@@ -454,12 +579,82 @@ async def patch_meal(meal_id: str, p: MealPatch):
 # ---------- Wire up ----------
 app.include_router(api_router)
 
+# ---------- Middleware: security headers, body cap, rate limit ----------
+_RATE_BUCKETS: dict[tuple[str, str], deque] = {}
+RATE_LIMITS: dict[str, tuple[int, int]] = {
+    # path-prefix : (max_requests, window_seconds)
+    "/api/analyze": (10, 60),  # 10 AI calls / minute / IP
+    "/api/": (120, 60),  # 120 other API calls / minute / IP
+}
+
+
+def _bucket_key(path: str) -> str:
+    for prefix in ("/api/analyze",):
+        if path.startswith(prefix):
+            return prefix
+    return "/api/"
+
+
+@app.middleware("http")
+async def security_and_limits(request: Request, call_next):
+    # 1) Body-size cap (Content-Length header)
+    cl = request.headers.get("content-length")
+    if cl and cl.isdigit() and int(cl) > MAX_BODY_BYTES:
+        return JSONResponse({"detail": "Payload too large"}, status_code=413)
+
+    # 2) Per-IP sliding-window rate limit on API endpoints
+    if request.url.path.startswith("/api/"):
+        ip = (
+            request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+            or (request.client.host if request.client else "unknown")
+        )
+        bucket = _bucket_key(request.url.path)
+        max_req, window = RATE_LIMITS[bucket]
+        key = (ip, bucket)
+        now = time.time()
+        q = _RATE_BUCKETS.setdefault(key, deque())
+        cutoff = now - window
+        while q and q[0] < cutoff:
+            q.popleft()
+        if len(q) >= max_req:
+            return JSONResponse(
+                {"detail": "Too many requests. Please slow down."}, status_code=429
+            )
+        q.append(now)
+
+    response: Response = await call_next(request)
+
+    # 3) Security headers on every response
+    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = (
+        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=()"
+    )
+    # Tight CSP — the API itself returns JSON; defense-in-depth in case any
+    # error page is rendered. Disallow inline scripts and framing.
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+    )
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-site"
+    # Override server fingerprint (latin-1 only for HTTP headers)
+    response.headers["Server"] = "protea"
+    return response
+
+
+# ---------- CORS (last so the security middleware can still set headers) ----------
+# Note: using allow_origins=["*"] with allow_credentials=False is the safe combo.
+# Cookies / auth headers are never exposed cross-origin. The mobile app does not
+# rely on cookies — it uses the EXPO_PUBLIC_BACKEND_URL directly.
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Accept"],
+    max_age=600,
 )
 
 
