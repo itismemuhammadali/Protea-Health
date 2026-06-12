@@ -1697,21 +1697,36 @@ function SourcesView({
   userId: string;
   dailyGoal: number;
 }) {
-  const [insights, setInsights] = useState<any | null>(null);
   const [range, setRange] = useState<"day" | "week" | "month">("day");
+  const [insightsByRange, setInsightsByRange] = useState<Record<string, any>>({});
+  const insights = insightsByRange[range] ?? null;
 
+  // Prefetch ALL three ranges on mount / whenever userId or meals change. This
+  // keeps toggling between Today / Week / Month instant — no card flicker as
+  // new data fetches in.
   useEffect(() => {
     if (!userId) return;
-    const days = range === "day" ? 0 : range === "week" ? 6 : 29;
-    const start = dateNDaysAgo(days);
+    const ranges: Array<["day" | "week" | "month", number]> = [
+      ["day", 0],
+      ["week", 6],
+      ["month", 29],
+    ];
     const end = todayStr();
     (async () => {
-      try {
-        const r = await fetch(`${API}/meals/insights?user_id=${userId}&start=${start}&end=${end}`);
-        if (r.ok) setInsights(await r.json());
-      } catch {}
+      const results: Record<string, any> = {};
+      await Promise.all(
+        ranges.map(async ([key, days]) => {
+          try {
+            const r = await fetch(
+              `${API}/meals/insights?user_id=${userId}&start=${dateNDaysAgo(days)}&end=${end}`
+            );
+            if (r.ok) results[key] = await r.json();
+          } catch {}
+        })
+      );
+      setInsightsByRange((prev) => ({ ...prev, ...results }));
     })();
-  }, [userId, range, entries.length]);
+  }, [userId, entries.length]);
 
   // Today breakdown (fallback when no insights)
   const todayBreakdown = useMemo(() => {
