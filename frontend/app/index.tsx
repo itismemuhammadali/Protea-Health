@@ -2022,22 +2022,33 @@ function SourcesView({
         </Card>
       )}
 
-      {/* Top dishes */}
-      {topDishes.length > 0 && (
-        <Card>
-          <Text style={styles.cardTitle}>Your 3 top protein meals</Text>
-          <Text
-            style={{
-              fontFamily: "CormorantGaramond_400Regular_Italic",
-              color: C.muted,
-              fontSize: 13,
-              marginTop: 4,
-            }}
-          >
-            Dishes that contributed the most protein this {range === "day" ? "day" : range}.
-          </Text>
-          <View style={{ marginTop: 12, gap: 8 }}>
-            {topDishes.slice(0, 3).map((d, i) => {
+      {/* Top dishes — always rendered so the card never unmounts during data fetches */}
+      <Card>
+        <Text style={styles.cardTitle}>Your 3 top protein meals</Text>
+        <Text
+          style={{
+            fontFamily: "CormorantGaramond_400Regular_Italic",
+            color: C.muted,
+            fontSize: 13,
+            marginTop: 4,
+          }}
+        >
+          Dishes that contributed the most protein this {range === "day" ? "day" : range}.
+        </Text>
+        <View style={{ marginTop: 12, gap: 8, minHeight: 90 }}>
+          {topDishes.length === 0 ? (
+            <Text
+              style={{
+                fontFamily: "CormorantGaramond_400Regular_Italic",
+                color: C.muted,
+                fontSize: 14,
+                marginTop: 12,
+              }}
+            >
+              No meals logged in this range yet.
+            </Text>
+          ) : (
+            topDishes.slice(0, 3).map((d, i) => {
               const max = topDishes[0].protein || 1;
               const w = Math.round((d.protein / max) * 100);
               return (
@@ -2092,10 +2103,10 @@ function SourcesView({
                   </View>
                 </View>
               );
-            })}
-          </View>
-        </Card>
-      )}
+            })
+          )}
+        </View>
+      </Card>
 
       {/* Protein fact of the day */}
       <Card style={{ backgroundColor: `${C.primary}08`, borderColor: `${C.primary}30` }}>
