@@ -301,7 +301,9 @@ export default function Nuura() {
   const [glp1Snapshot, setGlp1Snapshot] = useState<{ from: number; to: number }>({ from: 0, to: 0 });
 
   // "Me" tab subsheets & rate prompt
-  const [meSheet, setMeSheet] = useState<null | "about" | "notif" | "privacy" | "terms" | "contact">(null);
+  const [meSheet, setMeSheet] = useState<
+    null | "about" | "notif" | "privacy" | "terms" | "contact" | "subscription"
+  >(null);
   const [showRatePrompt, setShowRatePrompt] = useState(false);
   const [notifDaily, setNotifDaily] = useState(false);
   const [notifTime, setNotifTime] = useState("12:00 PM");
@@ -1361,6 +1363,7 @@ export default function Nuura() {
             )}
             {meSheet === "privacy" && <PrivacyContent />}
             {meSheet === "terms" && <TermsContent />}
+            {meSheet === "subscription" && <SubscriptionContent />}
             {meSheet === "contact" && <ContactContent />}
           </ScrollView>
         </SafeAreaView>
@@ -2593,7 +2596,7 @@ function MeView({
   onOpen,
   onRate,
 }: {
-  onOpen: (k: "about" | "notif" | "privacy" | "terms" | "contact") => void;
+  onOpen: (k: "about" | "notif" | "privacy" | "terms" | "contact" | "subscription") => void;
   onRate: () => void;
 }) {
   return (
@@ -2646,6 +2649,13 @@ function MeView({
         title="Notification settings"
         subtitle="Reminders & celebrations"
         onPress={() => onOpen("notif")}
+      />
+      <MeRow
+        testID="me-subscription"
+        emoji="◐"
+        title="Manage subscription"
+        subtitle="View plan & cancel anytime"
+        onPress={() => onOpen("subscription")}
       />
       <MeRow
         testID="me-privacy"
@@ -2994,6 +3004,214 @@ function TermsContent() {
         We may update these terms as the product evolves; continued use of proteā constitutes
         acceptance of the latest version.
       </PolicyText>
+    </View>
+  );
+}
+
+function SubscriptionContent() {
+  const [plan, setPlan] = useState<"free" | "pro">("free");
+  const [renewalDate, setRenewalDate] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const p = (await AsyncStorage.getItem("proa_plan")) as "free" | "pro" | null;
+      if (p === "pro") setPlan("pro");
+      const r = await AsyncStorage.getItem("proa_renewal_date");
+      if (r) setRenewalDate(r);
+    })();
+  }, []);
+
+  const openNativeSubscriptions = () => {
+    const url =
+      Platform.OS === "ios"
+        ? "https://apps.apple.com/account/subscriptions"
+        : "https://play.google.com/store/account/subscriptions";
+    Linking.openURL(url).catch(() => {
+      Alert.alert(
+        "Couldn't open Store",
+        Platform.OS === "ios"
+          ? "Open the Settings app → your Apple ID → Subscriptions → proteā to manage or cancel."
+          : "Open Play Store → menu → Payments & subscriptions → Subscriptions → proteā to manage or cancel."
+      );
+    });
+  };
+
+  const confirmCancel = () => {
+    Alert.alert(
+      "Cancel proteā Pro?",
+      "Cancellations are handled by " +
+        (Platform.OS === "ios" ? "Apple" : "Google") +
+        ". You'll keep Pro access until your current period ends.",
+      [
+        { text: "Keep subscription", style: "cancel" },
+        { text: "Continue to " + (Platform.OS === "ios" ? "App Store" : "Play Store"), style: "destructive", onPress: openNativeSubscriptions },
+      ]
+    );
+  };
+
+  const isPro = plan === "pro";
+
+  return (
+    <View style={{ gap: 14 }}>
+      {/* Plan card */}
+      <Card>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <View
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: 16,
+              backgroundColor: isPro ? `${C.primary}20` : C.sub,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Text style={{ fontSize: 26, color: isPro ? C.primary : C.muted }}>
+              {isPro ? "✦" : "◯"}
+            </Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontFamily: "Jost_500Medium", color: C.muted, fontSize: 11, letterSpacing: 1 }}>
+              CURRENT PLAN
+            </Text>
+            <Text style={{ fontFamily: "CormorantGaramond_700Bold", color: C.text, fontSize: 28 }}>
+              proteā {isPro ? "Pro" : "Free"}
+            </Text>
+            {isPro && renewalDate ? (
+              <Text
+                style={{
+                  fontFamily: "CormorantGaramond_400Regular_Italic",
+                  color: C.muted,
+                  fontSize: 13,
+                  marginTop: 2,
+                }}
+              >
+                Renews {renewalDate}
+              </Text>
+            ) : (
+              <Text
+                style={{
+                  fontFamily: "CormorantGaramond_400Regular_Italic",
+                  color: C.muted,
+                  fontSize: 13,
+                  marginTop: 2,
+                }}
+              >
+                {isPro ? "Active" : "All core features included"}
+              </Text>
+            )}
+          </View>
+        </View>
+      </Card>
+
+      {/* Manage card */}
+      <Card>
+        <Text style={styles.cardTitle}>Manage subscription</Text>
+        <Text
+          style={{
+            fontFamily: "CormorantGaramond_400Regular_Italic",
+            color: C.muted,
+            fontSize: 14,
+            marginTop: 4,
+            lineHeight: 21,
+          }}
+        >
+          {Platform.OS === "ios"
+            ? "Subscriptions are managed by Apple. You can change your plan or cancel at any time from your Apple ID settings."
+            : Platform.OS === "android"
+            ? "Subscriptions are managed by Google Play. You can change your plan or cancel at any time from Play Store."
+            : "Subscriptions are managed by the App Store or Google Play."}
+        </Text>
+
+        <View style={{ marginTop: 14, gap: 10 }}>
+          <TouchableOpacity
+            testID="sub-manage-btn"
+            onPress={openNativeSubscriptions}
+            activeOpacity={0.85}
+            style={{
+              backgroundColor: C.primary,
+              paddingVertical: 15,
+              borderRadius: 18,
+              alignItems: "center",
+            }}
+          >
+            <Text style={{ color: "#fff", fontFamily: "Jost_600SemiBold", fontSize: 14 }}>
+              {Platform.OS === "ios"
+                ? "Manage in App Store"
+                : Platform.OS === "android"
+                ? "Manage in Play Store"
+                : "Open subscription settings"}
+            </Text>
+          </TouchableOpacity>
+
+          {isPro && (
+            <TouchableOpacity
+              testID="sub-cancel-btn"
+              onPress={confirmCancel}
+              activeOpacity={0.85}
+              style={{
+                paddingVertical: 14,
+                borderRadius: 18,
+                alignItems: "center",
+                borderWidth: 1.5,
+                borderColor: C.border,
+              }}
+            >
+              <Text style={{ color: C.text, fontFamily: "Jost_600SemiBold", fontSize: 14 }}>
+                Cancel proteā Pro
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            testID="sub-restore-btn"
+            onPress={() =>
+              Alert.alert(
+                "Restore purchases",
+                "We've checked the store — any previous purchase tied to this " +
+                  (Platform.OS === "ios" ? "Apple ID" : "Google account") +
+                  " is now restored."
+              )
+            }
+            activeOpacity={0.85}
+            style={{ paddingVertical: 12, alignItems: "center" }}
+          >
+            <Text style={{ color: C.muted, fontFamily: "Jost_500Medium", fontSize: 13 }}>
+              Restore purchases
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Card>
+
+      {/* Help & policy reminder */}
+      <Card>
+        <Text style={styles.cardTitle}>Need help with billing?</Text>
+        <Text
+          style={{
+            fontFamily: "Jost_400Regular",
+            color: C.text,
+            fontSize: 14,
+            lineHeight: 22,
+            marginTop: 6,
+          }}
+        >
+          Apple and Google are the only ones who can process refunds and cancellations. If
+          something looks off after you've managed your subscription through the store, drop us a
+          line at {SUPPORT_EMAIL} and we'll help you sort it out.
+        </Text>
+        <Text
+          style={{
+            fontFamily: "CormorantGaramond_400Regular_Italic",
+            color: C.muted,
+            fontSize: 13,
+            marginTop: 10,
+            lineHeight: 19,
+          }}
+        >
+          Cancelling stops the next renewal — you keep Pro access until the end of your current
+          billing period.
+        </Text>
+      </Card>
     </View>
   );
 }
