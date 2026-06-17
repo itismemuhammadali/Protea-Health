@@ -59,5 +59,25 @@ target 'prote' do
       :mac_catalyst_enabled => false,
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
+
+    # ----- Xcode 16+ user-script sandboxing fix -----
+    # Expo's pod scripts (EXConstants, ExpoModulesCore, etc.) write files
+    # outside the sandbox during build. With ENABLE_USER_SCRIPT_SANDBOXING=YES
+    # (the Xcode 16/26 default) every "Command PhaseScriptExecution failed
+    # with a nonzero exit code" trace points here. Disable sandboxing for
+    # generated pod targets AND the main app target.
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'
+      end
+    end
+    installer.aggregate_targets.each do |aggregate_target|
+      aggregate_target.user_project.native_targets.each do |target|
+        target.build_configurations.each do |config|
+          config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'
+        end
+      end
+      aggregate_target.user_project.save
+    end
   end
 end

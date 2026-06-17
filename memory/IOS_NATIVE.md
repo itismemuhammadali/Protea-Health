@@ -97,6 +97,30 @@ npx expo run:ios    # builds + opens the simulator
 
 If Xcode complains about signing, open `ios/prote.xcworkspace`, select the `prote` target → Signing & Capabilities → tick "Automatically manage signing" and pick your Team.
 
+### Known Xcode 16 / Xcode 26 build error — already fixed in this project
+
+**Symptom**: Build fails on the EXConstants (or another Expo pod) target with
+`Command PhaseScriptExecution failed with a nonzero exit code`.
+
+**Cause**: Xcode 16 introduced `ENABLE_USER_SCRIPT_SANDBOXING = YES` as the
+default. Several Expo pod build scripts write files outside the sandbox
+during build, so every PhaseScriptExecution returns non-zero. Xcode 26
+inherits this default.
+
+**Fix shipped in this project**: the `Podfile` `post_install` hook now sets
+`ENABLE_USER_SCRIPT_SANDBOXING = NO` on every pod target AND every native
+target in the user project. If you regenerate the ios folder via
+`expo prebuild --clean`, the patched Podfile is preserved.
+
+**If you still see the error after pulling fresh code**:
+```bash
+cd ios
+rm -rf Pods Podfile.lock build
+pod install
+cd ..
+# Then Xcode: Product → Clean Build Folder (⇧⌘K) → Run
+```
+
 ## How to ship to TestFlight / App Store via Emergent
 
 The simplest path is the green **Publish** button in the Emergent toolbar — it uses EAS Build under the hood and produces a signed `.ipa`. No local Mac required.
