@@ -13,7 +13,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Snap meal photos to log protein",
         "NSPhotoLibraryUsageDescription": "Pick meal photos to log protein"
-      }
+      },
+      "bundleIdentifier": "com.anonymous.frontend"
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +24,8 @@
       "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.READ_EXTERNAL_STORAGE"
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
