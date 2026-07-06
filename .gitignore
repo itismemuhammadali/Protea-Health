@@ -1,1 +1,8 @@
 frontend/.metro-cache/cache.zip
+.env
+.env.*
+*.env
+credentials.json
+*.pem
+*.key
+.credentials
