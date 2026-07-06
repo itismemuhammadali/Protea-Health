@@ -2756,7 +2756,10 @@ function AboutContent() {
       </Para>
       <Para head>Built by women who understand the science.</Para>
       <Para>
-        proteā was created by a Harvard PhD and an MIT computer science grad.
+        proteā was created by a Harvard PhD and an MIT computer science grad — bringing together
+        rigorous technical expertise and deep academic research to build something the wellness
+        industry has overlooked for too long: a nutrition tool designed from the ground up with
+        women's physiology, privacy, and real lives in mind.
       </Para>
       <Text
         style={{
