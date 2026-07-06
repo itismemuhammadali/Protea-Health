@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -309,6 +309,11 @@ export default function Nuura() {
   const [notifDaily, setNotifDaily] = useState(false);
   const [notifTime, setNotifTime] = useState("12:00 PM");
   const [notifGoalCelebrate, setNotifGoalCelebrate] = useState(true);
+
+  // Confetti — fires once per day when the user hits their protein goal
+  const [showConfetti, setShowConfetti] = useState(false);
+  const confettiRef = useRef<any>(null);
+  const confettiCheckedRef = useRef(false);
 
   const [weekTotals, setWeekTotals] = useState<Record<string, number>>({});
   const [monthTotals, setMonthTotals] = useState<Record<string, number>>({});
@@ -711,6 +716,33 @@ export default function Nuura() {
   // ----- Derived -----
   const total = useMemo(() => entries.reduce((s, e) => s + (e.protein || 0), 0), [entries]);
   const pct = (total / dailyGoal) * 100;
+
+  // ----- Confetti: fire once per day when goal is hit -----
+  useEffect(() => {
+    if (bootstrapping) return;
+    if (!notifGoalCelebrate) return;
+    if (total < dailyGoal || dailyGoal <= 0) return;
+    if (confettiCheckedRef.current) return;
+    confettiCheckedRef.current = true;
+    (async () => {
+      try {
+        const key = "nuura_confetti_lastdate";
+        const last = await AsyncStorage.getItem(key);
+        const today = todayStr();
+        if (last !== today) {
+          setShowConfetti(true);
+          await AsyncStorage.setItem(key, today);
+          // Auto-hide after animation completes
+          setTimeout(() => setShowConfetti(false), 4000);
+        }
+      } catch {}
+    })();
+  }, [total, dailyGoal, bootstrapping, notifGoalCelebrate]);
+
+  // Reset the "checked" guard if the user drops below their goal again
+  useEffect(() => {
+    if (total < dailyGoal) confettiCheckedRef.current = false;
+  }, [total, dailyGoal]);
 
   if (!fontsLoaded || bootstrapping) {
     return (
@@ -1452,6 +1484,32 @@ export default function Nuura() {
           </View>
         </View>
       </Modal>
+
+      {/* Confetti — fires once per day when the daily protein goal is hit */}
+      {showConfetti && (
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 9999,
+            pointerEvents: "none",
+          }}
+        >
+          <ConfettiCannon
+            ref={confettiRef}
+            count={180}
+            origin={{ x: 195, y: 0 }}
+            fadeOut
+            autoStart
+            explosionSpeed={450}
+            fallSpeed={3000}
+            colors={[C.primary, C.accent, C.green, "#F5D0E0", "#FFE7B0", "#B7E4C7", "#FFB8C6"]}
+          />
+        </View>
+      )}
     </SafeAreaView>
   );
 }
