@@ -150,4 +150,20 @@ No location, microphone, contacts, calendar, Bluetooth, motion, HealthKit, track
 
 ## Where to grab the archive
 
-Local path inside the container: `/app/proteā-ios-native.zip`
+Local path inside the container: `/app/prote-ios-native.zip`
+
+---
+
+## Sync status — 2026-07-06
+
+The iOS native project is **fully aligned** with the current JS source:
+
+- ✅ `Info.plist` matches `app.json` — camera + photo library usage descriptions are current
+- ✅ `Podfile` retains the Xcode 16 `ENABLE_USER_SCRIPT_SANDBOXING=NO` patch
+- ✅ All recent changes are **JavaScript-only** (no native code, no new native deps):
+  - Confetti animation using `react-native-confetti-cannon` (pure JS library — no `.podspec`, no autolinking)
+  - `About proteā` copy update
+  - `Manage subscription` — removed leftover `isPro` conditional
+- ✅ No `expo prebuild` regeneration is required — Metro will bundle the latest JS into the iOS app automatically when you run `pod install && xcodebuild` (or via Emergent Publish)
+- ✅ Fresh archive: `/app/prote-ios-native.zip` (excludes `Pods/`, `build/`, `DerivedData/`)
+
