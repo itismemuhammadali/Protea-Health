@@ -26,7 +26,8 @@
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.RECORD_AUDIO"
-      ]
+      ],
+      "package": "com.emergent.gainslog.zmal69"
     },
     "web": {
       "bundler": "metro",

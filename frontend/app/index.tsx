@@ -19,6 +19,7 @@ import {
 import Svg, { Circle } from "react-native-svg";
 import * as ImagePicker from "expo-image-picker";
 import * as StoreReview from "expo-store-review";
+import ConfettiCannon from "react-native-confetti-cannon";
 import { Linking } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFonts } from "expo-font";
@@ -2755,11 +2756,7 @@ function AboutContent() {
       </Para>
       <Para head>Built by women who understand the science.</Para>
       <Para>
-        proteā was created by a Harvard PhD with experience in the pharmaceutical and wellness
-        sectors as well as an MIT computer science grad — bringing together rigorous technical
-        expertise and deep academic research to build something the wellness industry has
-        overlooked for too long: a nutrition tool designed from the ground up with women's
-        physiology, privacy, and real lives in mind.
+        proteā was created by a Harvard PhD and an MIT computer science grad.
       </Para>
       <Text
         style={{
@@ -3009,18 +3006,6 @@ function TermsContent() {
 }
 
 function SubscriptionContent() {
-  const [plan, setPlan] = useState<"free" | "pro">("free");
-  const [renewalDate, setRenewalDate] = useState<string | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      const p = (await AsyncStorage.getItem("proa_plan")) as "free" | "pro" | null;
-      if (p === "pro") setPlan("pro");
-      const r = await AsyncStorage.getItem("proa_renewal_date");
-      if (r) setRenewalDate(r);
-    })();
-  }, []);
-
   const openNativeSubscriptions = () => {
     const url =
       Platform.OS === "ios"
@@ -3049,61 +3034,8 @@ function SubscriptionContent() {
     );
   };
 
-  const isPro = plan === "pro";
-
   return (
     <View style={{ gap: 14 }}>
-      {/* Plan card */}
-      <Card>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-          <View
-            style={{
-              width: 56,
-              height: 56,
-              borderRadius: 16,
-              backgroundColor: isPro ? `${C.primary}20` : C.sub,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Text style={{ fontSize: 26, color: isPro ? C.primary : C.muted }}>
-              {isPro ? "✦" : "◯"}
-            </Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontFamily: "Jost_500Medium", color: C.muted, fontSize: 11, letterSpacing: 1 }}>
-              CURRENT PLAN
-            </Text>
-            <Text style={{ fontFamily: "CormorantGaramond_700Bold", color: C.text, fontSize: 28 }}>
-              proteā {isPro ? "Pro" : "Free"}
-            </Text>
-            {isPro && renewalDate ? (
-              <Text
-                style={{
-                  fontFamily: "CormorantGaramond_400Regular_Italic",
-                  color: C.muted,
-                  fontSize: 13,
-                  marginTop: 2,
-                }}
-              >
-                Renews {renewalDate}
-              </Text>
-            ) : (
-              <Text
-                style={{
-                  fontFamily: "CormorantGaramond_400Regular_Italic",
-                  color: C.muted,
-                  fontSize: 13,
-                  marginTop: 2,
-                }}
-              >
-                {isPro ? "Active" : "All core features included"}
-              </Text>
-            )}
-          </View>
-        </View>
-      </Card>
-
       {/* Manage card */}
       <Card>
         <Text style={styles.cardTitle}>Manage subscription</Text>
@@ -3144,24 +3076,22 @@ function SubscriptionContent() {
             </Text>
           </TouchableOpacity>
 
-          {isPro && (
-            <TouchableOpacity
-              testID="sub-cancel-btn"
-              onPress={confirmCancel}
-              activeOpacity={0.85}
-              style={{
-                paddingVertical: 14,
-                borderRadius: 18,
-                alignItems: "center",
-                borderWidth: 1.5,
-                borderColor: C.border,
-              }}
-            >
-              <Text style={{ color: C.text, fontFamily: "Jost_600SemiBold", fontSize: 14 }}>
-                Cancel proteā Pro
-              </Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            testID="sub-cancel-btn"
+            onPress={confirmCancel}
+            activeOpacity={0.85}
+            style={{
+              paddingVertical: 14,
+              borderRadius: 18,
+              alignItems: "center",
+              borderWidth: 1.5,
+              borderColor: C.border,
+            }}
+          >
+            <Text style={{ color: C.text, fontFamily: "Jost_600SemiBold", fontSize: 14 }}>
+              Cancel subscription
+            </Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
             testID="sub-restore-btn"
