@@ -1,22 +1,33 @@
 {
   "expo": {
-    "name": "proteā",
+    "name": "proteia",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
+    "splash": {
+      "image": "./assets/images/splash-image.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#FAF6F1"
+    },
     "scheme": "frontend",
     "userInterfaceStyle": "automatic",
+    "projectId": "protea-6b85c",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSCameraUsageDescription": "Snap meal photos to log protein",
-        "NSPhotoLibraryUsageDescription": "Pick meal photos to log protein"
+        "NSPhotoLibraryUsageDescription": "Pick meal photos to log protein",
+        "NSMotionUsageDescription": "Allow $(PRODUCT_NAME) to track movement and physical activity",
+        "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to access your microphone"
       },
-      "bundleIdentifier": "com.anonymous.frontend"
+      "bundleIdentifier": "com.protea.app",
+      "buildNumber": "8"
     },
     "android": {
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#faf6f1"
@@ -24,10 +35,10 @@
       "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.RECORD_AUDIO"
+        "com.android.vending.BILLING"
       ],
-      "package": "com.emergent.gainslog.zmal69"
+      "package": "com.protea.app",
+      "versionCode": 4
     },
     "web": {
       "bundler": "metro",
@@ -39,24 +50,33 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#faf6f1"
+          "image": "./assets/images/splash-image.png",
+          "resizeMode": "cover",
+          "backgroundColor": "#FAF6F1"
         }
       ],
       [
         "expo-image-picker",
         {
           "cameraPermission": "Snap meal photos to log protein",
-          "photosPermission": "Pick meal photos to log protein"
+          "photosPermission": "Pick meal photos to log protein",
+          "microphonePermission": false
         }
       ],
       "expo-web-browser",
-      "expo-font"
+      "expo-font",
+      "expo-image",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "2267c16b-f696-472e-9376-d273f2dcd4be"
+      }
+    },
+    "owner": "muhammadali222"
   }
 }
