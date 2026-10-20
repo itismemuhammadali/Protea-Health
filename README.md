@@ -1,7 +1,11 @@
 # 🥗 Protea Health — Clinical Protein Tracker & GLP-1 Nutrition Engine
 
 <p align="center">
-  <img src="assets/protea_logo.jpg" alt="Protea Health Logo" width="180" style="border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.12);" />
+  <img src="assets/branding/protea_production_logo.png" alt="Protea Health Production Store Logo" width="140" style="border-radius: 20px; box-shadow: 0 8px 24px rgba(20, 176, 242, 0.25); margin: 0 12px;" />
+  <img src="assets/protea_logo.jpg" alt="Protea Health Custom Identity Emblem" width="140" style="border-radius: 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); margin: 0 12px;" />
+</p>
+<p align="center">
+  <em>Left: Google Play Production App Mark &bull; Right: Architectural Health & Nutrition Emblem</em>
 </p>
 
 <p align="center">
