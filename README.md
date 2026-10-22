@@ -16,7 +16,7 @@
   <a href="https://apps.apple.com/pk/app/proteia/id6810623435">
     <img src="https://img.shields.io/badge/App_Store-Production_Live-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Apple App Store" />
   </a>
-  <a href="https://play.google.com/store/apps/details?id=com.protea.health">
+  <a href="https://play.google.com/store/apps/details?id=com.protea.app">
     <img src="https://img.shields.io/badge/Google_Play-Production_Live-34A853?style=for-the-badge&logo=googleplay&logoColor=white" alt="Google Play Store" />
   </a>
   <img src="https://img.shields.io/badge/React_Native-Expo_51+-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React Native Expo" />
@@ -32,8 +32,9 @@
 
 > **Production Application Verification:**
 > 
-> The clinical nutrition calculator, meal snapshot logger, and GLP-1 muscle-preservation engine in this repository are actively deployed in production on the **Google Play Store**:
-> - 📱 **Live Production Build:** [`com.protea.app` on Google Play](https://play.google.com/store/apps/details?id=com.protea.app)
+> The clinical nutrition calculator, meal snapshot logger, and GLP-1 muscle-preservation engine in this repository are actively deployed in production on both the **Apple App Store** and the **Google Play Store**:
+> - 🍏 **Apple App Store (iOS):** [Proteia on App Store (`id6810623435`)](https://apps.apple.com/pk/app/proteia/id6810623435)
+> - 🤖 **Google Play Store (Android):** [`com.protea.app` on Google Play](https://play.google.com/store/apps/details?id=com.protea.app)
 > 
 > *Notice: This repository presents the full-stack architecture titled **Protea Health** (React Native/Expo Mobile Client + Node.js Cloud Functions backend). All clinical multiplier mathematics, camera-assisted logging flows, In-App Purchase integrations, and Firestore schema architectures were engineered by **Muhammad Ali** as Lead Mobile Engineer.*
 
